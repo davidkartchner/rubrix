@@ -30,7 +30,10 @@ args = parser.parse_args()
 
 
 def get_query_hash(x):
-  return hashlib.sha1(x.encode()).hexdigest()[:50]
+    '''
+    Create unique hash of a PubMed query
+    '''
+    return hashlib.sha1(x.encode()).hexdigest()[:50]
 
 def search_pmid(search_string):
     '''
@@ -89,6 +92,24 @@ def get_journal_info(journal_record):
     
 
 def get_abstracts(pmids):
+    '''
+    Pull abstracts for a long list of PMIDs
+
+    Inputs:
+    --------------------
+        pmids: list 
+            List of PMIDs to pull from PubMed
+
+    Outputs:
+    --------------------
+        abstract_dict: dict
+            Dictionary of abstracts with appropriate metadata
+            Keys of dict:
+                'parsed': Abstracts suitable for curation based on exclusion criteria
+                'no_substances': Abstracts with text but without chemical substances
+                'no_abstract': PMIDs with title only, no abstract
+    '''
+
     # Add in credentials
     Entrez.email = email
     Entrez.api_key = api_key
@@ -143,27 +164,20 @@ def get_abstracts(pmids):
         parsed.append({'metadata':metadata, 'abstract':abstract, 'text':text})
         
     return {'parsed':parsed, 'no_abstract':no_abstract, 'no_substances':no_substances}
-# def get_pubtator_abstracts(query, format='pubtator', concepts=['disease','chemical']):
-#     '''
-#     Get PMIDs for a particular query and store results in a unique location
-#     '''
-#     pmids = time_msg(search_pmid, [query], 'Running query')
-#     # print(pmids)
-    
-#     abstracts = []
-    
-#     for i in range(len(pmids)//1000 + 1):
-#         start = i*1000
-#         end = start + 1000
-#         json = {'pmids': pmids[start:end], 'concepts':concepts}
-#         r = requests.post("https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/"+format , json=json)
-#         abstracts.extend(r.text.split('\n\n'))
-        
-#     return [x for x in abstracts if x != '']
+
 
 def distribute_abstracts(users, abstract_list):
     '''
     Distribute abstracts to individual curators based on number of credit hours
+
+    Inputs:
+    -------------------
+        users: dict
+            Loaded dictionary of users from .users.yaml
+
+        abstract_list: list
+            List of parsed abstracts output as value of 'parsed' key in output
+            of get_abstracts
     '''
     # Calculate total number of credits 
     total_credits = sum([x['credits'] for x in users if 'credits' in x.keys()])
@@ -196,9 +210,6 @@ def distribute_abstracts(users, abstract_list):
         iters %= total_credits
         
     return assignments
-        
-
-
 
 def load_abstracts(parsed_abstracts, 
                     api_key='615d255a-45d4-4d0f-bc1c-f998f8e91f40', 
@@ -250,19 +261,6 @@ def load_abstracts(parsed_abstracts,
                 multi_label=True,  # we also need to set the multi_label option in Rubrix
             )
         )
-        # rb.log(
-        #     rb.TextClassificationRecord(
-        #         inputs=record["text"],
-        #         metadata=record['metadata'],
-        #         multi_label=True,  # we also need to set the multi_label option in Rubrix
-        #     ),
-        #     name="cancer_stage_0",
-        #     tags={
-        #     "task": "multilabel-text-classification",
-        #     "family": "text-classification",
-        #     "dataset": "cancer_stage_0",
-        #     },
-        # )
         new_logged_records.append(record['metadata']['pmid'])
 
     # print('\n'.join(new_logged_records))
@@ -284,8 +282,8 @@ def load_abstracts(parsed_abstracts,
 
 def main():
     all_pmids = []
-    # Pull list of PMIDs
-
+    
+    # Pull list of PMIDs for many cancer types
     type_cancer_all = ["colorectal", "lung", "rectum", "female breast", "colon", "ovary", "prostate", "bladder"]
     type_cancer_all_mesh = ["Colorectal", "Lung", "Rectal", "Breast", "Colonic", "Ovarian", "Prostatic", "Urinary bladder"]
     for cancer_type, mesh_type in zip(type_cancer_all, type_cancer_all_mesh):
@@ -293,26 +291,27 @@ def main():
 
         all_pmids.extend(search_pmid(query))
 
+    # Dump list of all PMIDs to file
     with open('pmid_list.json', 'w') as f:
         ujson.dump(all_pmids, f)
 
+    # Grab abstracts for all pmids and dump them to files
     abstract_dict = get_abstracts(all_pmids)
     with open('parsed.json', 'w') as f:
         ujson.dump(abstract_dict['parsed'], f)
 
+    # Put abstracts with no mentioned substances in a separate file
     with open('no_substances.json', 'w') as f:
         ujson.dump(abstract_dict['no_substances'], f)
 
     # Distribute assignments to users
     users = yaml.load(open('.users.yaml','r'), Loader)
     assigned = distribute_abstracts(users, abstract_dict['parsed'])
-    # for key, val in assigned.items():
-    #     print(key, len(val))
+
 
     # Upload assignments to individual workspaces
     for user, user_abstracts in assigned.items():
         workspace = 'cancer_stage_1_' + user
-        # workspace = 'cancer_stage_1_test'
         load_abstracts(user_abstracts, records_logfile=args.records_logfile, workspace=workspace)
 
 if __name__=='__main__':
