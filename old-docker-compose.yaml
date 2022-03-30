@@ -1,0 +1,53 @@
+version: "3"
+
+services:
+  rubrix:
+    image: recognai/rubrix:latest
+    restart: unless-stopped
+    ports:
+      - "6900:80"
+    environment:
+      ELASTICSEARCH: http://elasticsearch:9200
+<<<<<<< HEAD
+      RUBRIX_LOCAL_AUTH_USERS_DB_FILE: /config/.users.yaml
+
+    volumes:
+      - .users.yaml:/config/.users.yaml
+
+=======
+      # RUBRIX_LOCAL_AUTH_USERS_DB_FILE: /config/.users.yaml
+    # volumes:
+      #- ${PWD}/.users.yaml:/config/.users.yaml
+>>>>>>> ffd07e3d8568a740e9eecdb851aef8c89b4ca151
+    networks:
+      - rubrix
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.11.1
+    container_name: elasticsearch
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=es-rubrix-local
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - rubrix
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.11.1
+    container_name: kibana
+    ports:
+      - 5601:5601
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+    networks:
+      - rubrix
+
+networks:
+  rubrix:
+    driver: bridge

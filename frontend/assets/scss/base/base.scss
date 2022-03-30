@@ -220,7 +220,6 @@ a {
     flex: 1;
     -webkit-box-sizing: border-box;
     box-sizing: border-box;
-    overflow: hidden;
     position: relative
 }
 
@@ -272,4 +271,8 @@ a {
     overflow: hidden;
     pointer-events: none;
     z-index: -1
+}
+.highlight-text {
+  display: inline;
+  color: $highlight;
 }
