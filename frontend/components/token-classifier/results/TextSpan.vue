@@ -16,85 +16,58 @@
   -->
 
 <template>
-  <span class="span">
+  <span class="span__text">
     <EntityHighlight
-      v-if="span.entity"
-      :text="text"
+      v-if="token.entity"
       :class="['color_' + tag_color, { zindex3: showEntitiesSelector }]"
-      :span="span"
+      :span="token"
       :dataset="dataset"
+      :record="record"
       @openTagSelector="openTagSelector"
       @removeEntity="removeEntity"
-    />
-    <span
-      v-else
-      class="span__text"
+    /><span
       @mousedown="startSelection"
       @mouseup="endSelection"
-      v-html="$highlightSearch(dataset.query.text, text)"
-    /><span class="entities__selector__container">
-      <div
-        v-click-outside="onClickOutside"
-        v-if="showEntitiesSelector"
-        class="entities__selector"
-      >
-        <span v-show="!addnewSlotVisible">
-          <ul class="entities__selector__options">
-            <li
-              class="entities__selector__option"
-              :class="[
-                `color_${lastSelectedEntity.colorId}`,
-                activeEntity === -1 ? 'active' : null,
-              ]"
-              v-if="lastSelectedEntity.text"
-              @click="selectEntity(lastSelectedEntity)"
-            >
-              <span>{{ lastSelectedEntity.text }}</span>
-              <span class="entity__sort-code">{{
-                activeEntity === -1 ? "[ENTER]" : "[SPACE]"
-              }}</span>
-            </li>
-            <li
-              v-for="(entity, index) in formattedEntities"
-              tabindex="0"
-              :focused="activeEntity === index"
-              :key="index"
-              class="entities__selector__option"
-              :class="[
-                `color_${entity.colorId}`,
-                activeEntity === index ? 'active' : null,
-              ]"
-              @click="selectEntity(entity)"
-            >
-              <span>{{ entity.text }}</span>
-              <span class="entity__sort-code"
-                >[{{
-                  activeEntity === index ? "ENTER" : entity.shortCut
-                }}]</span
-              >
-            </li>
-          </ul>
-        </span>
-      </div>
-    </span>
-    <span class="span__whitespace" v-html="whiteSpace"></span>
+      @mouseover="overSelection"
+      v-else
+      v-for="(t, i) in token.tokens"
+      :key="i"
+      v-html="visualizeToken(t)"
+    ></span
+    ><lazy-entities-selector
+      :dataset="dataset"
+      :suggestedLabel="suggestedLabel"
+      :token="token"
+      :formattedEntities="formattedEntities"
+      :showEntitiesSelector="showEntitiesSelector"
+      v-if="showEntitiesSelector"
+      @selectEntity="onSelectEntity"
+      @changeEntityLabel="onChangeEntity"
+      v-click-outside="onClickOutside"
+    />
   </span>
 </template>
 
 <script>
 import ClickOutside from "v-click-outside";
-import "assets/icons/cross";
-import { substring } from "stringz";
 
 export default {
   directives: {
     clickOutside: ClickOutside.directive,
   },
   props: {
-    lastSelectedEntity: {
-      type: Object,
-    },
     record: {
+      type: Object,
+      required: true,
+    },
+    dataset: {
+      type: Object,
+      required: true,
+    },
+    suggestedLabel: {
+      type: String,
+    },
+    token: {
       type: Object,
       required: true,
     },
@@ -102,44 +75,14 @@ export default {
       type: Number,
       required: true,
     },
-    spans: {
-      type: Array,
-      required: true,
-    },
-    dataset: {
-      type: Object,
-      required: true,
-    },
   },
   data: () => ({
-    newSlot: "",
     showEntitiesSelector: false,
-    addnewSlotVisible: false,
-    controlPressed: false,
-    controlKey: undefined,
-    activeEntity: -1,
   }),
   computed: {
-    span() {
-      return this.spans[this.spanId];
-    },
-    text() {
-      return substring(
-        this.record.text,
-        this.spans[this.spanId].start,
-        this.spans[this.spanId].end
-      );
-    },
-    whiteSpace() {
-      return substring(
-        this.record.text,
-        this.spans[this.spanId].end,
-        this.spans[this.spanId + 1] ? this.spans[this.spanId + 1].start : ""
-      );
-    },
     tag_color() {
       return this.dataset.entities.filter(
-        (entity) => entity.text === this.span.entity.label
+        (entity) => entity.text === this.token.entity.label
       )[0].colorId;
     },
     filteredEntities() {
@@ -158,13 +101,12 @@ export default {
       return this.dataset.viewSettings.viewMode === "annotate";
     },
   },
-  mounted() {
-    window.addEventListener("keydown", this.keyDown);
-    window.addEventListener("keyup", this.keyUp);
-  },
-  destroyed() {
-    window.removeEventListener("keydown", this.keyDown);
-    window.addEventListener("keyup", this.keyUp);
+  watch: {
+    async showEntitiesSelector(n, o) {
+      if (n !== o) {
+        await this.dataset.viewSettings.disableShortCutPagination(n);
+      }
+    },
   },
   methods: {
     startSelection() {
@@ -173,149 +115,68 @@ export default {
         this.$emit("startSelection", this.spanId);
       }
     },
+    overSelection() {
+      if (this.annotationEnabled) {
+        this.$emit("overSelection", this.spanId);
+      }
+    },
     endSelection() {
       if (this.annotationEnabled) {
         this.$emit("endSelection", this.spanId);
         if (this.formattedEntities.length == 1) {
-          this.selectEntity(this.formattedEntities[0]);
+          this.onSelectEntity(this.formattedEntities[0].text);
         } else {
           this.showEntitiesSelector = true;
         }
       }
     },
     openTagSelector() {
-      this.showEntitiesSelector = !this.showEntitiesSelector;
-      this.startSelection();
-      this.endSelection();
+      if (this.token.origin !== "prediction") {
+        this.showEntitiesSelector = !this.showEntitiesSelector;
+        this.startSelection();
+        this.endSelection();
+      }
     },
     removeEntity() {
-      this.$emit("removeEntity", this.span.entity);
+      this.$emit("removeEntity", this.token.entity);
       this.showEntitiesSelector = false;
     },
     onClickOutside() {
       this.showEntitiesSelector = false;
     },
-    selectEntity(entityLabel) {
-      this.$emit("setLastSelectedEntity", entityLabel);
-      this.span.entity
-        ? this.$emit("changeEntityLabel", this.span.entity, entityLabel.text)
-        : this.$emit("selectEntity", entityLabel.text);
+    onSelectEntity(entityLabel) {
+      this.$emit("selectEntity", entityLabel);
       this.showEntitiesSelector = false;
-      this.resetActiveEntity();
     },
-    keyUp(event) {
-      if (this.controlKey === event.key) {
-        this.controlPressed = false;
-      }
+    onChangeEntity(token, entityLabel) {
+      this.$emit("changeEntityLabel", token, entityLabel);
+      this.showEntitiesSelector = false;
     },
-    resetActiveEntity() {
-      this.activeEntity = -1;
-    },
-    keyDown(event) {
-      if (event.ctrlKey) {
-        this.controlKey = event.key;
-        this.controlPressed = true;
-      }
-      const cmd = String.fromCharCode(event.keyCode).toUpperCase();
-      if (this.showEntitiesSelector && cmd) {
-        const element = document.getElementsByClassName("active");
-        event.preventDefault();
-        // enter
-        if (event.keyCode === 13) {
-          if (this.lastSelectedEntity.text && this.activeEntity === -1) {
-            this.selectEntity(this.lastSelectedEntity);
-          } else {
-            this.selectEntity(this.formattedEntities[this.activeEntity]);
-          }
-          //space
-        } else if (event.keyCode === 32 && this.lastSelectedEntity) {
-          this.selectEntity(this.lastSelectedEntity);
-          //down
-        } else if (
-          event.keyCode === 40 &&
-          this.activeEntity + 1 < this.formattedEntities.length
-        ) {
-          this.activeEntity++;
-          if (element[0] && element[0].offsetTop >= 120) {
-            element[0].parentNode.scrollTop =
-              element[0].offsetTop - 2;
-          }
-          //up
-        } else if (event.keyCode === 38 && this.activeEntity >= 0) {
-          this.activeEntity--;
-          if (element[0]) {
-            element[0].parentNode.scrollTop =
-              element[0].offsetTop - element[0].offsetHeight - 2;
-          }
-        } else {
-          const entity = this.formattedEntities.find((t) => t.shortCut === cmd);
-          if (entity) {
-            this.selectEntity(entity);
-          }
-        }
-      }
+    visualizeToken(token) {
+      let text = token.highlighted
+        ? this.$htmlHighlightText(token.text)
+        : this.$htmlText(token.text);
+      return `${text}${token.charsBetweenTokens}`;
     },
   },
 };
 </script>
 <style lang="scss" scoped>
-.entities {
-  &__selector {
-    position: absolute;
-    left: -35%;
-    top: 1em;
-    min-width: 170px;
-    z-index: 9;
-    background: $bg;
-    font-weight: 600;
-    padding: 0.6em;
-    border-radius: 1px;
-    &__container {
-      @include font-size(14px);
-      line-height: 1em;
-      display: inline-block;
-      white-space: pre-line;
-    }
-    &__options {
-      max-height: 170px;
-      overflow-y: scroll;
-      padding-left: 0;
-      margin: 0;
-      overscroll-behavior: contain;
-      position: relative;
-    }
-    &__option {
-      display: flex;
-      transition: all 0.2s ease;
-      padding: 0.5em;
-      position: relative;
-      cursor: pointer;
-      margin-top: 2px;
-      margin-bottom: 2px;
-      &.active {
-        border-color: palette(grey, medium) !important;
-      }
-    }
-  }
-}
 .span {
   position: relative;
   display: inline;
   line-height: 18px;
-  @include font-size(0);
-  &::selection {
-    background: none !important;
-  }
+  font-size: 0;
   &__text {
     display: inline;
     position: relative;
     @include font-size(18px);
+    margin: 0 -1.5px;
+    padding: 0 1.5px;
   }
   &__whitespace {
     @include font-size(18px);
-    &::selection {
-      background: none !important;
-    }
+    cursor: default !important;
   }
 }
 
@@ -327,19 +188,14 @@ export default {
   cursor: pointer;
   position: relative;
   background: palette(grey, smooth);
+  .prediction ::v-deep .highlight__content {
+    background: palette(grey, smooth);
+  }
   .span__text {
     background: palette(grey, smooth);
   }
   .span__whitespace {
     background: palette(grey, smooth);
-  }
-  span::selection {
-    background: none !important;
-  }
-  ::v-deep .highlight-text {
-    &::selection {
-      background: none !important;
-    }
   }
 }
 .last-selected {
@@ -347,42 +203,15 @@ export default {
     background: none;
   }
 }
-.span span {
-  display: inline;
-  &::selection {
-    background: palette(grey, smooth);
-  }
-  ::v-deep .highlight-text {
-    &::selection {
-      background: palette(grey, smooth);
-    }
-  }
-}
 .list__item--annotation-mode span span {
   cursor: text;
-}
-.entity {
-  &.non-selectable,
-  &.non-selectable--show-sort-code {
-    cursor: default;
-    pointer-events: none;
-  }
-  &__sort-code {
-    @include font-size(12px);
-    font-weight: lighter;
-    margin-left: auto;
-    margin-right: 0;
-    .non-selectable & {
-      display: none;
-    }
-  }
 }
 // ner colors
 
 $colors: 50;
 $hue: 360;
 @for $i from 1 through $colors {
-  $rcolor: hsla(($colors * $i) + ($hue * $i / $colors), 100% - $i / 2, 80%, 1);
+  $rcolor: hsla(($colors * $i) + calc($hue * $i / $colors), 100%, 88%, 1);
   .color_#{$i - 1} {
     &.annotation ::v-deep .highlight__content {
       background: $rcolor;
@@ -405,26 +234,19 @@ $hue: 360;
   .tag.color_#{$i - 1} span {
     background: $rcolor;
   }
-  .entities__selector__option.color_#{$i - 1} {
+  ::v-deep .entities__selector__option.color_#{$i - 1} {
     background: $rcolor;
     border: 2px solid $rcolor;
   }
-  .entities__selector__option.color_#{$i - 1} {
+  ::v-deep .entities__selector__option.color_#{$i - 1} {
+    &:active,
+    &.active,
     &:hover {
-      border: 2px solid palette(grey, medium);
-    }
-    &:active {
-      border: 2px solid palette(grey, medium);
+      border: 2px solid mix(black, $rcolor, 20%);
     }
   }
   .color_#{$i - 1} ::v-deep .highlight__tooltip {
     background: $rcolor;
   }
-}
-</style>
-<style lang="scss">
-.highlight-text {
-  display: inline;
-  font-weight: 600;
 }
 </style>

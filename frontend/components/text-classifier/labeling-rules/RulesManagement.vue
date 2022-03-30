@@ -79,7 +79,7 @@ export default {
           class: "table-info__title",
           type: "action",
         },
-        { name: "Label", field: "label", class: "text" },
+        { name: "Labels", field: "labels", class: "array", type: "array" },
         {
           name: "Coverage",
           field: "coverage",
@@ -99,14 +99,14 @@ export default {
           field: "correct",
           class: "text",
           tooltip:
-            "Number of records the rule labeled correctly (if annotations are available)",
+            "Number of labels the rule predicted correctly (if annotations are available)",
         },
         {
           name: "Incorrect",
           field: "incorrect",
           class: "text",
           tooltip:
-            "Number of records the rule labeled incorrectly (if annotations are available)",
+            "Number of labels the rule predicted incorrectly (if annotations are available)",
         },
         {
           name: "Precision",
@@ -158,7 +158,7 @@ export default {
             name: r.description,
             query: r.query,
             kind: "select",
-            label: r.label,
+            labels: r.labels,
             ...this.metricsForRule(r),
             created_at: r.created_at,
           };
@@ -173,9 +173,6 @@ export default {
         text: `You are about to delete the rule <strong>"${this.visibleModalId}"</strong> from your dataset. This action cannot be undone.`,
       };
     },
-  },
-  mounted() {
-    document.getElementsByTagName("body")[0].classList.remove("fixed-header");
   },
   methods: {
     ...mapActions({
@@ -247,7 +244,7 @@ export default {
 <style lang="scss" scoped>
 .rules-management {
   padding-left: 4em;
-  padding-top: 7em;
+  padding-top: 2em;
   overflow: auto;
   height: 100vh;
   &__container {
@@ -255,7 +252,7 @@ export default {
     background: rgba($lighter-color, 0.4);
     border: 1px solid $lighter-color;
     width: 100%;
-    border-radius: 5px;
+    border-radius: $border-radius;
   }
   &__title {
     color: $font-secondary-dark;

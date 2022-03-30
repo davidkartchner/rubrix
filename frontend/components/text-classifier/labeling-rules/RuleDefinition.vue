@@ -29,12 +29,6 @@
         </rules-metrics>
       </div>
     </div>
-    <p class="rule__records" v-if="dataset.results.total > 0">
-      Records
-      <template v-if="filtersApplied.length">with filters applied</template> ({{
-        dataset.results.total | formatNumber
-      }})
-    </p>
   </div>
 </template>
 <script>
@@ -67,10 +61,13 @@ export default {
   },
   watch: {
     async query(newValue) {
-      await this.updateCurrentRule({
-        query: newValue,
-        label: (this.currentRule || {}).label,
-      });
+      this.saved = false;
+      const rule = this.dataset.findRuleByQuery(newValue, undefined);
+      await this.dataset.setCurrentLabelingRule(
+        rule
+          ? rule
+          : { query: newValue, labels: (this.currentRule || {}).labels }
+      );
     },
   },
   computed: {
@@ -95,26 +92,21 @@ export default {
     rulesMetrics() {
       return this.dataset.labelingRulesMetrics;
     },
-    filtersApplied() {
-      return Object.values(this.dataset.query).filter(
-        (v) => v && Object.values(v).length
-      );
-    },
   },
   methods: {
-    async updateCurrentRule({ query, label }) {
+    async updateCurrentRule({ query, labels }) {
       if (!query) {
         return await this.dataset.clearCurrentLabelingRule();
       }
-      if (label) {
+      if (labels) {
         await this.dataset.setCurrentLabelingRule({
           query,
-          label,
+          labels,
         });
       } else {
         await this.dataset.setCurrentLabelingRule({
           query,
-          label: undefined,
+          labels: [],
         });
       }
       this.saved = false;
@@ -140,13 +132,10 @@ export default {
     background: rgba($lighter-color, 0.4);
     border: 1px solid $lighter-color;
     width: 100%;
-    border-radius: 5px;
+    border-radius: $border-radius;
     &.active {
       box-shadow: 0 1px 4px 0 rgba(185, 185, 185, 0.5);
     }
-  }
-  &__records {
-    color: $font-secondary;
   }
   &__button {
     float: left;

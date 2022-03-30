@@ -19,7 +19,7 @@
   <div class="container">
     <form class="form" @submit.prevent="userLogin">
       <Rubrix class="form__logo" />
-      <p class="form__title">Track and iterate on data for AI</p>
+      <p class="form__title">Build, improve, and monitor data for NLP</p>
       <div class="form__input" :class="{ active: login.username }">
         <input v-model="login.username" type="text" placeholder="Username" />
       </div>
@@ -33,7 +33,7 @@
       <ReButton type="submit" class="form__button button-primary"
         >Enter</ReButton
       >
-      <p>{{ error }}</p>
+      <p v-if="error">{{ error }}</p>
     </form>
   </div>
 </template>
@@ -86,30 +86,32 @@ export default {
 }
 
 .form {
-  border-radius: 3px;
+  border-radius: $border-radius;
   background: $lighter-color;
   margin: auto;
   display: inline-block;
-  padding: 2em 4em 1.5em 4em;
-  box-shadow: 29px 29px 57px #d0d0d1, -29px -29px 57px #ffffff;
+  padding: 50px;
+  box-shadow: $shadow;
   text-align: center;
-  max-width: 300px;
-  // box-shadow: 0 2px 44px 16px #DFDFDF;
-  border-radius: 3px;
+  max-width: 350px;
   &__logo {
     text-align: center;
-    margin-bottom: 1em;
+    margin-bottom: 1.5em;
   }
   &__title {
     text-align: center;
-    @include font-size(20px);
+    @include font-size(26px);
+    font-family: "Futura Medium";
     line-height: 1.2em;
     margin: 0 auto 2em auto;
+    color: #010250;
   }
   &__button {
     margin: 2em auto 0 auto;
-    text-align: center;
-    display: block;
+    text-align: center !important;
+    display: block !important;
+    width: 100%;
+    min-height: 36px !important;
   }
   &__input {
     position: relative;
@@ -117,11 +119,12 @@ export default {
     margin-bottom: 1em;
     input {
       border: 1px solid palette(grey, smooth);
+      border-radius: $radius;
       padding: 0 1em;
       outline: none;
       background: transparent;
       min-height: 40px;
-      min-width: 200px;
+      width: 100%;
     }
   }
 }
