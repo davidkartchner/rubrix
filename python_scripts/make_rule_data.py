@@ -1,9 +1,7 @@
 import os
 import time
-#import torch
 import argparse
 import sys
-import requests
 import hashlib
 import ujson
 import pickle
@@ -13,21 +11,22 @@ import pandas as pd
 import numpy as np
 import rubrix as rb
 
-from io import StringIO
+# from io import StringIO
 from tqdm import tqdm, trange
 from metapub import PubMedFetcher
 from Bio import Entrez
+sys.path.append('.')
 from ids import email, api_key, rubrix_api_key
 from yaml import Loader
 from collections import defaultdict
-sys.path.append('.')
+
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--query_path', help='path to text file with the query to run')
 parser.add_argument('--records_logfile', default='logged_records.txt', help='path to list of PMIDs of records that have already been logged')
 
-#args = parser.parse_args()
-args, unknown = parser.parse_known_args()
+args = parser.parse_args()
+
 
 def get_query_hash(x):
     '''
@@ -52,7 +51,7 @@ def search_pmid(search_string):
     pmids = fetch.pmids_for_query(search_string, retmax=5000000)
     return pmids
 
-#def pmid_abstract(pmid):
+# def pmid_abstract(pmid):
 #     '''
 #     Set up email and api_key in utils/ids.py
 #     Obtain api key: https://ncbiinsights.ncbi.nlm.nih.gov/2017/11/02/new-api-keys-for-the-e-utilities/
@@ -67,7 +66,7 @@ def search_pmid(search_string):
 #     if 'Abstract' in tmp.keys():
 #         abstract = ""
 #         for part in tmp['Abstract']['AbstractText']:
-#            abstract += part
+#             abstract += part
 #         return abstract
 #     else:
 #         return None
@@ -111,10 +110,11 @@ def get_abstracts(pmids):
     '''
 
     # Add in credentials
-    Entrez.email = 'dzhang398@gatech.edu'
-    Entrez.api_key = 'f60a5810a597968971a344ed2decec1fdc08'
+    Entrez.email = email
+    Entrez.api_key = api_key
 
     # Pull PMIDs in batches
+    pmids = set(pmids)
     pmids = [str(x) for x in pmids]
     records = []
     for i in trange(len(pmids)//1000 + 1):
@@ -160,63 +160,19 @@ def get_abstracts(pmids):
             no_substances.append({'pmid':pmid, 'text':text})
             continue
             
-        metadata = {'pmid':pmid, 'authors':authors, 'substances':substances, 'substance_mesh_id':substance_ui, 'journal':journal}
-        parsed.append({'metadata':metadata, 'title': title, 'abstract':abstract, 'text':text})
+        metadata = {'pmid':pmid, 'title': title, 'authors':authors, 'substances':substances, 'substance_mesh_id':substance_ui, 'journal':journal}
+        parsed.append({'metadata':metadata, 'abstract':abstract, 'text':text})
         
     return {'parsed':parsed, 'no_abstract':no_abstract, 'no_substances':no_substances}
 
 
-def distribute_abstracts(users, abstract_list):
-    '''
-    Distribute abstracts to individual curators based on number of credit hours
-
-    Inputs:
-    -------------------
-        users: dict
-            Loaded dictionary of users from .users.yaml
-
-        abstract_list: list
-            List of parsed abstracts output as value of 'parsed' key in output
-            of get_abstracts
-    '''
-    # Calculate total number of credits 
-    total_credits = sum([x['credits'] for x in users if 'credits' in x.keys()])
-    n = len(abstract_list)
-    abs_per_credit = n//total_credits
-    chunks_with_extra = n % total_credits
-
-    # Break abstract list into equally sized chunks
-    chunks = []
-    for i in range(total_credits):
-        chunks.append(abstract_list[i*abs_per_credit : (i+1) * abs_per_credit])
-        if i < chunks_with_extra:
-            chunks[-1].append(abstract_list[-i])
-
-    # Assign each chunk to 2 users
-    # Users end up with 2 chunks per credit hour
-    iters = 0
-    assignments = {}
-    for i, u in enumerate(users):
-        if 'credits' not in u.keys():
-            continue
-        # workspace = 'cancer_stage_1_' + u['username']
-        end = iters + 2 * u['credits'] % total_credits
-        if end < iters:
-            user_chunks = chunks[iters:] + chunks[:end]
-        else:
-            user_chunks = chunks[iters : iters + 2*u['credits']]
-        assignments[u['username']] = [abstract for chunk in user_chunks for abstract in chunk]
-        iters += 2 * u['credits'] 
-        iters %= total_credits
-        
-    return assignments
 
 def load_abstracts(parsed_abstracts, 
                     api_key=rubrix_api_key, 
                     records_logfile=None, 
                     qc_file=None,
-                    workspace='cancer_stage_1',
-                    name='cancer_stage_1',
+                    workspace='spring_2022_rules_stage_1',
+                    name=None,
                     min_curators_per_abstract=2,
                     ):
     rb.init("http://localhost:6900/", api_key=api_key)
@@ -234,52 +190,46 @@ def load_abstracts(parsed_abstracts,
             logged[record] += 1
     else:
         logged = defaultdict(int)
-
-    # Load files needed for quality control
-    if qc_file is None:
-        qc_records = set([])
-    elif os.path.isfile(qc_file):
-        qc_records = set(open(records_logfile, 'r').read().strip().split('\n'))
-    else:
-        qc_records = set([])
     
     for record in tqdm(parsed_abstracts):
         # See how many people have been assigned this abstract
         if logged is not None:
             if logged[record['metadata']['pmid']] >= min_curators_per_abstract:
-                if record not in qc_records:
+                # if record not in qc_records:
                     continue
 
         # Appending to the record list
-        inputs = {k:v for k, v in record.items() if k != 'metadata'}
         records.append(rb.TextClassificationRecord(
                 inputs=record["text"],
-                prediction=[('population_size',0), 
-                            ('quantitative_effect_measure',0),
-                            ('study_drug',0),
-                            ('control_group',0),
-                            ('target_disease',0)],
+                prediction=[('population_size',0.2), 
+                            ('quantitative_effect_measure',0.2),
+                            ('study_drug',0.2),
+                            ('control_group',0.2),
+                            ('target_disease',0.2)],
                 metadata=record['metadata'],
-                multi_label=True,  # we also need to set the multi_label option in Rubrix
+                multi_label=False,  # we also need to set the multi_label option in Rubrix
             )
         )
         new_logged_records.append(record['metadata']['pmid'])
-
+    print("Num records: ", len(records))
     # print('\n'.join(new_logged_records))
+
+    if name is None:
+        name = workspace
     rb.log(
         records=records,
         name=name,
-        tags={
-            "task": "multilabel-text-classification",
-            "family": "text-classification",
-            "dataset": "cancer_stage_1",
-        },
+        # tags={
+        #     "task": "text-classification",
+        #     "family": "text-classification",
+        #     "dataset": "cancer_stage_1",
+        # },
     )
 
-    if records_logfile is not None:
-        with open(records_logfile, 'a') as f:
-            for r in new_logged_records:
-                f.write(r + '\n')
+    # if records_logfile is not None:
+    #     with open(records_logfile, 'a') as f:
+    #         for r in new_logged_records:
+    #             f.write(r + '\n')
 
 
 
@@ -293,31 +243,21 @@ def main():
         query = '''(("{}" AND (neoplasm OR cancer OR tumour)) OR "{}"[MeSH]) AND ("Statins" OR "Hydroxymethylglutaryl-CoA Reductase Inhibitors"[MESH] OR "Adrenergic beta-antagonists"[MeSH] OR "beta-blockers" OR "Antihypertensive Agents"[MeSH] OR "Antihypertensive Agents" OR "Metformin" OR "Metformin"[MESH] OR "Aspirin" OR "Aspirin"[MESH] OR "ARBS" OR "Angiotensin Receptor Antagonists"[MESH] OR "NSAIDs" OR "Anti-Inflammatory Agents, Non-Steroidal"[MESH]) AND ("clinical trial" OR "retrospective" OR "prospective" OR "case control" OR "case-control")'''.format(cancer_type, mesh_type)
 
         all_pmids.extend(search_pmid(query))
-        all_pmids = list(set(all_pmids))
-    # Dump list of all PMIDs to file
-    with open('pmid_list.json', 'w') as f:
-        ujson.dump(all_pmids, f)
+
 
     # Grab abstracts for all pmids and dump them to files
     abstract_dict = get_abstracts(all_pmids)
-    with open('parsed.json', 'w') as f:
-        ujson.dump(abstract_dict['parsed'], f)
-
-    # Put abstracts with no mentioned substances in a separate file
-    with open('no_substances.json', 'w') as f:
-        ujson.dump(abstract_dict['no_substances'], f)
-
-    # Distribute assignments to users
-    users = yaml.load(open('.users.yaml','r'), Loader)
-    assigned = distribute_abstracts(users, abstract_dict['parsed'])
-
-
+    load_abstracts(abstract_dict['parsed'])
+    
     # Upload assignments to individual workspaces
-    for user, user_abstracts in assigned.items():
-        name='cancer_stage_1_' + user
-        load_abstracts(user_abstracts, records_logfile=args.records_logfile, workspace='cancer_stage_1_' + user, name=name)
-
-# load_abstracts(abstract_dict['parsed'], workspace='cancer_stage_1', name='all_abstracts')
+    users_list = yaml.load(open('.users.yaml','r'), Loader)
+    users = [u['username'] for u in users_list if 'credits' in u]
+    name ='rules_test_2'
+    load_abstracts(abstract_dict['parsed'],  name=name)
+    # for user in users:
+    #     workspace = 'rules_stage_1_' + user
+    
+    #     load_abstracts(abstract_dict['parsed'], workspace=workspace)
 
 if __name__=='__main__':
     main()

@@ -13,7 +13,7 @@ user_df['workspaces'] = '' # user_df['username'].map(lambda x: ['cancer_stage_1'
 
 # Get users that have been recently added
 old_users = pd.DataFrame(yaml.safe_load(open('.users.yaml','r')))['username'].tolist()
-new_user_df = user_df[user_df.username.map(lambda x: x not in old_users)
+new_user_df = user_df[user_df.username.map(lambda x: x not in old_users)]
 new_user_df['hashed_password'] = new_user_df.password.map(lambda x: subprocess.check_output(f'htpasswd -nbB "" {x}'.split()).decode("utf-8").strip().strip('"').strip(':'))
 
 records = new_user_df[['username','hashed_password', 'api_key','workspaces']].to_dict(orient='records')
