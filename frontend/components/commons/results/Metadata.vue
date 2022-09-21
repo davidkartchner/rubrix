@@ -17,19 +17,6 @@
 
 <template>
   <div class="metadata">
-    <div v-if="typeof title === 'object'">
-      <p
-        v-for="name in title"
-        :key="name.index"
-        class="metadata__title"
-        :title="name"
-      >
-        <span v-if="!Array.isArray(name)">{{ name | truncate(100) }}</span>
-      </p>
-    </div>
-    <div v-else>
-      <p class="metadata__title">{{ title }}</p>
-    </div>
     <div class="metadata__container">
       <div v-for="(item, index) in formatSortedMetadataItems" :key="index">
         <div class="metadata__blocks">
@@ -65,14 +52,6 @@
 
 <script>
 export default {
-  filters: {
-    truncate(string, value) {
-      if (string.length > value) {
-        return `${string.substring(0, value)}...`;
-      }
-      return string;
-    },
-  },
   props: {
     metadataItems: {
       type: Object,
@@ -93,7 +72,14 @@ export default {
   computed: {
     normalizedMetadataItems() {
       return Object.keys(this.metadataItems).reduce(
-        (r, k) => ((r[k] = String(this.metadataItems[k])), r),
+        (r, k) => (
+          (r[k] =
+            Array.isArray(this.metadataItems[k]) &&
+            this.metadataItems[k].length > 1
+              ? this.metadataItems[k]
+              : String(this.metadataItems[k])),
+          r
+        ),
         {}
       );
     },
@@ -109,8 +95,17 @@ export default {
   mounted() {
     if (this.appliedFilters) {
       Object.keys(this.appliedFilters).map((key) => {
+        const equalLength =
+          this.appliedFilters[key].length ===
+          this.normalizedMetadataItems[key].length;
         if (
-          this.appliedFilters[key].includes(this.normalizedMetadataItems[key])
+          Array.isArray(this.normalizedMetadataItems[key]) && equalLength
+            ? this.appliedFilters[key].every((f) =>
+                this.normalizedMetadataItems[key].includes(f)
+              )
+            : this.appliedFilters[key].includes(
+                this.normalizedMetadataItems[key]
+              )
         ) {
           this.selectedMetadata.push(key);
         }
@@ -122,9 +117,13 @@ export default {
       const filters = Object.keys(this.appliedFilters || {}).reduce(
         (r, k) => (
           (r[k] = Array.isArray(this.appliedFilters[k])
-            ? this.appliedFilters[k].filter(
-                (v) => v !== this.normalizedMetadataItems[k]
+            ? this.appliedFilters[k].length ===
+                this.normalizedMetadataItems[k].length &&
+              this.appliedFilters[k].every((f) =>
+                this.normalizedMetadataItems[k].includes(f)
               )
+              ? []
+              : this.appliedFilters[k]
             : []),
           r
         ),
@@ -137,11 +136,6 @@ export default {
 
       this.$emit("metafilterApply", filters);
     },
-    isApplied(item) {
-      if (this.appliedFilters) {
-        return Object.keys(this.appliedFilters).includes(item[0]);
-      }
-    },
   },
 };
 </script>
@@ -152,25 +146,12 @@ export default {
   max-width: 500px;
   margin: auto;
   pointer-events: all;
-  &__title {
-    color: $font-dark-color;
-    font-weight: 600;
-    margin-top: 2em;
-    margin-right: 2em;
-    white-space: pre-line;
-    display: none;
-    &:first-child {
-      margin-top: 0;
-    }
-    &:nth-child(-n + 5) {
-      display: block;
-    }
-  }
   &__container {
     max-height: 50vh;
     overflow-y: auto;
     margin-right: -1em;
     padding-right: 1em;
+    @extend %hide-scrollbar;
   }
   &__blocks {
     display: flex;
@@ -191,7 +172,6 @@ export default {
     color: $font-dark-color;
     font-weight: 600;
     &__item {
-      word-break: break-word;
       min-width: 200px;
       max-width: 300px;
       text-align: left;
@@ -199,6 +179,8 @@ export default {
       color: palette(grey, medium);
       font-weight: normal;
       line-height: 1em;
+      word-break: break-word;
+      hyphens: auto;
     }
   }
   &__key {

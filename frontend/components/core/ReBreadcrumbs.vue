@@ -18,15 +18,19 @@
 <template>
   <div class="breadcrumbs">
     <ul>
-      <li>
+      <li v-for="breadcrumb in filteredBreadcrumbs" :key="breadcrumb.name">
         <NuxtLink
-          v-for="breadcrumb in filteredBreadcrumbs"
-          :key="breadcrumb.name"
           class="breadcrumbs__item"
+          v-if="breadcrumb.link"
           :to="breadcrumb.link"
-        >
-          {{ breadcrumb.name }}
+          >{{ breadcrumb.name }}
         </NuxtLink>
+        <span
+          class="breadcrumbs__item --action"
+          v-else
+          @click="$emit('breadcrumb-action', breadcrumb.action)"
+          >{{ breadcrumb.name }}</span
+        >
       </li>
     </ul>
     <re-action-tooltip tooltip="Copied">
@@ -35,12 +39,12 @@
         class="breadcrumbs__copy"
         href="#"
         @click.prevent="
-          copyToClipboard(
+          $copyToClipboard(
             filteredBreadcrumbs[filteredBreadcrumbs.length - 1].name
           )
         "
       >
-        <svgicon name="copy" width="12" height="13" />
+        <svgicon name="copy" width="16" height="16" />
       </a>
     </re-action-tooltip>
   </div>
@@ -63,17 +67,6 @@ export default {
       return this.breadcrumbs.filter((breadcrumb) => breadcrumb.name);
     },
   },
-  methods: {
-    copyToClipboard(name) {
-      const myTemporaryInputElement = document.createElement("input");
-      myTemporaryInputElement.type = "text";
-      myTemporaryInputElement.className = "hidden-input";
-      myTemporaryInputElement.value = name;
-      document.body.appendChild(myTemporaryInputElement);
-      myTemporaryInputElement.select();
-      document.execCommand("Copy");
-    },
-  },
 };
 </script>
 
@@ -84,27 +77,44 @@ export default {
   display: flex;
   align-items: center;
   ul {
-    display: inline-block;
+    display: flex;
     padding-left: 0;
     font-weight: normal;
     list-style: none;
   }
-  &__copy {
-    .svg-icon {
-      fill: $lighter-color;
-    }
-  }
-  &__item {
+  li {
     margin: auto 0.5em auto auto;
-    color: $lighter-color;
-    text-decoration: none;
-    outline: none;
+    white-space: nowrap;
     &:not(:last-child):after {
       content: "/";
       margin-left: 0.5em;
     }
     &:last-child {
+      word-break: break-all;
+      white-space: pre-line;
       font-weight: 600;
+      a {
+        cursor: default;
+        pointer-events: none;
+      }
+    }
+  }
+  &__copy {
+    &:hover {
+      .svg-icon {
+        fill: darken($lighter-color, 10%);
+      }
+    }
+    .svg-icon {
+      fill: $lighter-color;
+    }
+  }
+  &__item {
+    color: $lighter-color;
+    text-decoration: none;
+    outline: none;
+    &.--action {
+      cursor: pointer;
     }
   }
 }

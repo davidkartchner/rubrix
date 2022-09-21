@@ -1,3 +1,17 @@
+#  Copyright 2021-present, the Recognai S.L. team.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 from json import JSONDecodeError
 
 import httpx
@@ -7,6 +21,7 @@ from rubrix.client.sdk.commons.errors import (
     BadRequestApiError,
     ForbiddenApiError,
     GenericApiError,
+    MethodNotAllowedApiError,
     NotFoundApiError,
     UnauthorizedApiError,
     ValidationApiError,
@@ -29,18 +44,18 @@ def handle_response_error(
 
     if response.status_code == BadRequestApiError.HTTP_STATUS:
         error_type = BadRequestApiError
-    if response.status_code == UnauthorizedApiError.HTTP_STATUS:
+    elif response.status_code == UnauthorizedApiError.HTTP_STATUS:
         error_type = UnauthorizedApiError
-    if response.status_code == AlreadyExistsApiError.HTTP_STATUS:
+    elif response.status_code == AlreadyExistsApiError.HTTP_STATUS:
         error_type = AlreadyExistsApiError
-    if response.status_code == ForbiddenApiError.HTTP_STATUS:
+    elif response.status_code == ForbiddenApiError.HTTP_STATUS:
         error_type = ForbiddenApiError
-    if response.status_code == NotFoundApiError.HTTP_STATUS:
+    elif response.status_code == NotFoundApiError.HTTP_STATUS:
         error_type = NotFoundApiError
-    if response.status_code == ValidationApiError.HTTP_STATUS:
+    elif response.status_code == ValidationApiError.HTTP_STATUS:
         error_type = ValidationApiError
-
-    if error_type == ValidationApiError:
         error_args["client_ctx"] = client_ctx
+    elif response.status_code == MethodNotAllowedApiError.HTTP_STATUS:
+        error_type = MethodNotAllowedApiError
 
     raise error_type(**error_args)

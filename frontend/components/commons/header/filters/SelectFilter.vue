@@ -16,12 +16,12 @@
   -->
 
 <template>
-  <div class="filter__row">
+  <div :class="[appliedFilters.length ? 'selected' : '', 'filter__row']">
     <svgicon
       v-if="appliedFilters.length"
       title="remove field"
       class="filter__remove-button"
-      name="cross"
+      name="close"
       width="14"
       height="14"
       @click="onRemove()"
@@ -37,9 +37,9 @@
         <span v-if="appliedFilters.length">
           <p v-if="typeof appliedFilters === 'string'">{{ appliedFilters }}</p>
           <p
-            v-for="appliedFilter in appliedFilters"
+            v-for="(appliedFilter, index) in appliedFilters"
             v-else
-            :key="appliedFilter"
+            :key="index"
           >
             {{ appliedFilter }}
           </p>
@@ -48,7 +48,7 @@
           {{ filter.placeholder }}
         </span>
       </span>
-      <div slot="dropdown-content">
+      <div slot="dropdown-content" v-if="visible">
         <input
           v-model="searchText"
           class="filter-options"
@@ -58,19 +58,19 @@
         />
         <ul>
           <li
-            v-for="(recordsCounter, optionName) in filterOptions(
+            v-for="[option, counter] in filterOptions(
               filter.options,
               searchText
             )"
-            :key="optionName.index"
+            :key="option"
           >
             <ReCheckbox
-              :id="optionName"
+              :id="option"
               v-model="selectedOptions"
               class="re-checkbox--dark"
-              :value="optionName"
+              :value="option"
             >
-              {{ optionName }} ({{ recordsCounter | formatNumber }})
+              {{ option }} ({{ counter | formatNumber }})
             </ReCheckbox>
           </li>
           <li
@@ -159,13 +159,12 @@ export default {
       this.selectedOptions = this.appliedFilters;
     },
     filterOptions(options, text) {
+      const sortedOptions = Object.entries(options).sort((a, b) => b[1] - a[1]);
       if (text === undefined) {
-        return options;
+        return sortedOptions;
       }
-      let filtered = Object.fromEntries(
-        Object.entries(options).filter(([id]) =>
-          id.toLowerCase().match(text.toLowerCase())
-        )
+      let filtered = sortedOptions.filter(([id]) =>
+        id.toLowerCase().match(text.toLowerCase())
       );
       return filtered;
     },
@@ -185,6 +184,9 @@ export default {
   &__row {
     display: flex;
     align-items: center;
+    &:not(.selected) {
+      margin-left: 2em;
+    }
     .dropdown {
       margin-right: 0;
       margin-left: auto;
@@ -214,10 +216,10 @@ export default {
     }
   }
   &__remove-button {
-    position: absolute;
-    left: 20px;
+    position: relative;
     margin-right: 1em;
     cursor: pointer;
+    flex-shrink: 0;
   }
 }
 

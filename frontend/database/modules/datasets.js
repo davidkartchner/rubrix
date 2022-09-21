@@ -111,11 +111,11 @@ async function _loadTaskDataset(dataset) {
       query: {},
       size: 0,
     });
-
     _dataset = await _updateTaskDataset({
       dataset: _dataset,
       data: { globalResults },
     });
+    await _refreshDatasetAggregations({ dataset: _dataset });
   }
 
   if (pagination && pagination.page > 1) {
@@ -291,7 +291,7 @@ async function _refreshDatasetAggregations({ dataset }) {
 async function _search({ dataset, query, sort, size }) {
   query = _normalizeSearchQuery({ query: query || {}, dataset });
   sort = sort || dataset.sort || [];
-  size = size || new Pagination().size;
+  size = size || Pagination.find(dataset.name).size;
   try {
     await _updateViewSettings({ id: dataset.name, data: { loading: true } });
     await _querySearch({ dataset, query, sort, size });
@@ -492,8 +492,8 @@ const actions = {
     const newRecords = records.map((record) => ({
       ...record,
       annotation: {
-        agent,
         ...record.annotation,
+        agent,
       },
       selected: false,
       status: "Validated",
@@ -630,6 +630,7 @@ const actions = {
       page: pagination.page,
     });
     await _refreshDatasetAggregations({ dataset: paginatedDataset });
+    await _fetchAnnotationProgress(paginatedDataset);
   },
 };
 

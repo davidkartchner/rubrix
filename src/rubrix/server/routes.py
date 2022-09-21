@@ -20,11 +20,12 @@ set the required security dependencies if api security is enabled
 
 from fastapi import APIRouter
 
-from .commons.errors.base_errors import __ALL__
-from .datasets import api as datasets
-from .info import api as info
-from .tasks import api as tasks
-from .users import api as users
+from rubrix.server.apis.v0.handlers import datasets as datasets
+from rubrix.server.apis.v0.handlers import info as info
+from rubrix.server.apis.v0.handlers import metrics as tasks
+from rubrix.server.apis.v0.handlers import records_deletion as records_deletion
+from rubrix.server.apis.v0.handlers import users as users
+from rubrix.server.errors.base_errors import __ALL__
 
 api_router = APIRouter(
     responses={error.HTTP_STATUS: error.api_documentation() for error in __ALL__}
@@ -33,5 +34,11 @@ api_router = APIRouter(
 
 dependencies = []
 
-for router in [users.router, datasets.router, info.router, tasks.router]:
+for router in [
+    users.router,
+    datasets.router,
+    info.router,
+    tasks.router,
+    records_deletion.router,
+]:
     api_router.include_router(router, dependencies=dependencies)

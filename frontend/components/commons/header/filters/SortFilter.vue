@@ -16,12 +16,12 @@
   -->
 
 <template>
-  <div class="sort">
+  <div :class="[selectedField ? 'selected' : '', 'sort']">
     <svgicon
       v-if="selectedField"
       title="remove field"
       class="sort__remove-button"
-      name="cross"
+      name="close"
       width="14"
       height="14"
       @click="removeField()"
@@ -60,18 +60,18 @@
       @click="selectSortDirection()"
     >
       <svgicon
-        width="17"
+        width="24"
         height="24"
-        :name="defaultSortedByDir === 'asc' ? 'arrow-top' : 'arrow-bottom'"
+        :name="defaultSortedByDir === 'asc' ? 'arrow-up' : 'arrow-down'"
       />
     </p>
   </div>
 </template>
 
 <script>
-import "assets/icons/cross";
-import "assets/icons/arrow-top";
-import "assets/icons/arrow-bottom";
+import "assets/icons/close";
+import "assets/icons/arrow-up";
+import "assets/icons/arrow-down";
 export default {
   props: {
     sortOptions: {
@@ -92,23 +92,12 @@ export default {
   computed: {
     filteredSortOptions() {
       if (this.searchText === undefined) {
-        return this.formatSortOptions;
+        return this.sortOptions;
       }
-      let filtered = this.formatSortOptions.filter((opt) =>
+      let filtered = this.sortOptions.filter((opt) =>
         opt.name.toLowerCase().match(this.searchText.toLowerCase())
       );
       return filtered;
-    },
-    formatSortOptions() {
-      return this.sortOptions.map((opt) => {
-        if (opt.group.toLowerCase() === "metadata") {
-          return {
-            ...opt,
-            name: `Metadata.${opt.name}`,
-          };
-        }
-        return opt;
-      });
     },
   },
   mounted() {
@@ -149,10 +138,10 @@ export default {
   display: flex;
   align-items: center;
   &__remove-button {
-    position: absolute;
-    left: 20px;
+    position: relative;
     margin-right: 1em;
     cursor: pointer;
+    flex-shrink: 0;
   }
   &__direction {
     position: relative;
@@ -166,16 +155,18 @@ export default {
     text-align: center;
     cursor: pointer;
   }
+  &:not(.selected) {
+    margin-left: 2em;
+  }
   .dropdown {
     width: 100%;
-    max-width: 280px;
+    max-width: 270px;
     a {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
       text-decoration: none;
       max-width: 250px;
       display: block;
+      word-break: break-word;
+      hyphens: auto;
     }
   }
 }

@@ -12,9 +12,14 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+from typing import Optional
 
-from rubrix.server.datasets.model import Dataset
-from rubrix.server.tasks.text_classification import TextClassificationBulkData
+from rubrix.server.apis.v0.models.datasets import Dataset
+from rubrix.server.apis.v0.models.text_classification import (
+    TextClassificationBulkRequest,
+)
+from rubrix.server.commons.models import TaskType
+from tests.helpers import SecuredClient
 
 
 def test_delete_dataset(mocked_client):
@@ -28,13 +33,84 @@ def test_delete_dataset(mocked_client):
     assert response.json() == {
         "detail": {
             "code": "rubrix.api.errors::EntityNotFoundError",
-            "params": {"name": "test_delete_dataset", "type": "Dataset"},
+            "params": {"name": "test_delete_dataset", "type": "ServiceDataset"},
         }
     }
 
 
+def test_create_dataset(mocked_client):
+    dataset_name = "test_create_dataset"
+    delete_dataset(mocked_client, dataset_name)
+    request = dict(
+        name=dataset_name,
+        task=TaskType.text_classification,
+        tags={"env": "test", "class": "text classification"},
+        metadata={"config": {"the": "config"}},
+    )
+    response = mocked_client.post(
+        "/api/datasets",
+        json=request,
+    )
+    assert response.status_code == 200
+    dataset = Dataset.parse_obj(response.json())
+    assert dataset.created_by == "rubrix"
+    assert dataset.metadata == request["metadata"]
+    assert dataset.tags == request["tags"]
+    assert dataset.name == dataset_name
+    assert dataset.owner == "rubrix"
+    assert dataset.task == TaskType.text_classification
+
+    response = mocked_client.post(
+        "/api/datasets",
+        json=request,
+    )
+    assert response.status_code == 409
+
+
+def test_fetch_dataset_using_workspaces(mocked_client: SecuredClient):
+    ws = "mock-ws"
+    dataset_name = "test_fetch_dataset_using_workspaces"
+    mocked_client.add_workspaces_to_rubrix_user([ws])
+
+    delete_dataset(mocked_client, dataset_name, workspace=ws)
+    delete_dataset(mocked_client, dataset_name)
+    request = dict(
+        name=dataset_name,
+        task=TaskType.text_classification,
+    )
+    response = mocked_client.post(
+        f"/api/datasets?workspace={ws}",
+        json=request,
+    )
+
+    assert response.status_code == 200, response.json()
+    dataset = Dataset.parse_obj(response.json())
+    assert dataset.created_by == "rubrix"
+    assert dataset.name == dataset_name
+    assert dataset.owner == ws
+    assert dataset.task == TaskType.text_classification
+
+    response = mocked_client.post(
+        f"/api/datasets?workspace={ws}",
+        json=request,
+    )
+    assert response.status_code == 409, response.json()
+
+    response = mocked_client.post(
+        f"/api/datasets",
+        json=request,
+    )
+
+    assert response.status_code == 200, response.json()
+    dataset = Dataset.parse_obj(response.json())
+    assert dataset.created_by == "rubrix"
+    assert dataset.name == dataset_name
+    assert dataset.owner == "rubrix"
+    assert dataset.task == TaskType.text_classification
+
+
 def test_dataset_naming_validation(mocked_client):
-    request = TextClassificationBulkData(records=[])
+    request = TextClassificationBulkRequest(records=[])
     dataset = "Wrong dataset name"
 
     response = mocked_client.post(
@@ -54,7 +130,7 @@ def test_dataset_naming_validation(mocked_client):
                         "type": "value_error.str.regex",
                     }
                 ],
-                "model": "TextClassificationDatasetDB",
+                "model": "TextClassificationDataset",
             },
         }
     }
@@ -76,7 +152,7 @@ def test_dataset_naming_validation(mocked_client):
                         "type": "value_error.str.regex",
                     }
                 ],
-                "model": "TokenClassificationDatasetDB",
+                "model": "TokenClassificationDataset",
             },
         }
     }
@@ -137,16 +213,66 @@ def test_open_and_close_dataset(mocked_client):
     )
 
 
-def delete_dataset(client, dataset):
-    assert client.delete(f"/api/datasets/{dataset}").status_code == 200
+def delete_dataset(client, dataset, workspace: Optional[str] = None):
+    url = f"/api/datasets/{dataset}"
+    if workspace:
+        url += f"?workspace={workspace}"
+    assert client.delete(url).status_code == 200
 
 
-def create_mock_dataset(client, dataset):
+def create_mock_dataset(client, dataset, records=[]):
     client.post(
         f"/api/datasets/{dataset}/TextClassification:bulk",
-        json=TextClassificationBulkData(
+        json=TextClassificationBulkRequest(
             tags={"env": "test", "class": "text classification"},
             metadata={"config": {"the": "config"}},
-            records=[],
+            records=records,
         ).dict(by_alias=True),
     )
+
+
+def test_delete_records(mocked_client):
+    dataset_name = "test_delete_records"
+    delete_dataset(mocked_client, dataset_name)
+
+    create_mock_dataset(
+        mocked_client,
+        dataset=dataset_name,
+        records=[
+            {
+                "id": i,
+                "inputs": {"text": f"This is a text for id {i}"},
+            }
+            for i in range(1, 100)
+        ],
+    )
+    response = mocked_client.delete(
+        f"/api/datasets/{dataset_name}/data", json={"ids": [1]}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"matched": 1, "processed": 1}
+
+    try:
+        mocked_client.change_current_user("mock-user")
+        response = mocked_client.delete(f"/api/datasets/{dataset_name}/data")
+        assert response.status_code == 403
+        assert response.json() == {
+            "detail": {
+                "code": "rubrix.api.errors::ForbiddenOperationError",
+                "params": {
+                    "detail": "You don't have the necessary permissions to delete records on this dataset."
+                    " Only dataset creators or administrators can delete datasets"
+                },
+            }
+        }
+
+        response = mocked_client.delete(
+            f"/api/datasets/{dataset_name}/data?mark_as_discarded=true"
+        )
+        assert response.status_code == 200
+        assert response.json() == {
+            "matched": 99,
+            "processed": 98,
+        }  # different values are caused by conflicts found
+    finally:
+        mocked_client.reset_default_user()

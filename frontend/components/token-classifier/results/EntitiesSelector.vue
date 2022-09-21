@@ -5,7 +5,7 @@
         <li
           class="entities__selector__option suggestion"
           :class="[
-            `color_${suggestedEntity.colorId}`,
+            `color_${suggestedEntity.colorId % $entitiesMaxColors}`,
             activeEntity === -1 ? 'active' : null,
           ]"
           v-if="suggestedEntity"
@@ -17,7 +17,7 @@
         <li
           class="entities__selector__option suggestion"
           :class="[
-            `color_${lastSelectedEntity.colorId}`,
+            `color_${lastSelectedEntity.colorId % $entitiesMaxColors}`,
             activeEntity === -1 ? 'active' : null,
           ]"
           v-else-if="lastSelectedEntity.text"
@@ -33,7 +33,7 @@
           :key="index"
           class="entities__selector__option"
           :class="[
-            `color_${entity.colorId}`,
+            `color_${entity.colorId % $entitiesMaxColors}`,
             activeEntity === index ? 'active' : null,
           ]"
           @click="selectEntity(entity)"
@@ -45,7 +45,7 @@
         </li>
       </ul>
       <div v-else class="entities__selector--empty">
-        <svgicon name="error" width="17" height="17" />
+        <svgicon name="danger" width="17" height="17" />
         <p>No labels available</p>
       </div>
     </div>
@@ -53,7 +53,7 @@
 </template>
 
 <script>
-import "assets/icons/error";
+import "assets/icons/danger";
 import { mapActions } from "vuex";
 export default {
   data: () => ({
@@ -182,6 +182,7 @@ export default {
       margin: 0;
       overscroll-behavior: contain;
       position: relative;
+      @extend %hide-scrollbar;
     }
     &__option {
       display: flex;
@@ -196,6 +197,8 @@ export default {
       }
       span {
         cursor: pointer !important;
+        word-break: break-word;
+        hyphens: auto;
       }
     }
     &--empty {

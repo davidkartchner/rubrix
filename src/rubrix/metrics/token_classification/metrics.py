@@ -1,3 +1,17 @@
+#  Copyright 2021-present, the Recognai S.L. team.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 from enum import Enum
 from typing import Optional, Union
 
@@ -14,7 +28,7 @@ def tokens_length(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
         interval: The bins or bucket for result histogram
 
     Returns:
@@ -26,7 +40,7 @@ def tokens_length(
         >>> summary.visualize() # will plot a histogram with results
         >>> summary.data # the raw histogram data with bins of size 5
     """
-    metric = api.ACTIVE_API.compute_metric(
+    metric = api.active_api().compute_metric(
         name, metric="tokens_length", query=query, interval=interval
     )
 
@@ -48,7 +62,7 @@ def token_frequency(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
         tokens: The top-k number of tokens to retrieve
 
     Returns:
@@ -60,7 +74,7 @@ def token_frequency(
         >>> summary.visualize() # will plot a histogram with results
         >>> summary.data # the top-50 tokens frequency
     """
-    metric = api.ACTIVE_API.compute_metric(
+    metric = api.active_api().compute_metric(
         name, metric="token_frequency", query=query, size=tokens
     )
 
@@ -79,7 +93,7 @@ def token_length(name: str, query: Optional[str] = None) -> MetricSummary:
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
 
     Returns:
         The summary for token length distribution
@@ -90,7 +104,7 @@ def token_length(name: str, query: Optional[str] = None) -> MetricSummary:
         >>> summary.visualize() # will plot a histogram with results
         >>> summary.data # The token length distribution
     """
-    metric = api.ACTIVE_API.compute_metric(name, metric="token_length", query=query)
+    metric = api.active_api().compute_metric(name, metric="token_length", query=query)
 
     return MetricSummary.new_summary(
         data=metric.results,
@@ -105,10 +119,18 @@ def token_length(name: str, query: Optional[str] = None) -> MetricSummary:
 def token_capitalness(name: str, query: Optional[str] = None) -> MetricSummary:
     """Computes the token capitalness distribution
 
+        ``UPPER``: All characters in the token are upper case.
+
+        ``LOWER``: All characters in the token are lower case.
+
+        ``FIRST``: The first character in the token is upper case.
+
+        ``MIDDLE``: First character in the token is lower case and at least one other character is upper case.
+
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
 
     Returns:
         The summary for token length distribution
@@ -119,7 +141,7 @@ def token_capitalness(name: str, query: Optional[str] = None) -> MetricSummary:
         >>> summary.visualize() # will plot a histogram with results
         >>> summary.data # The token capitalness distribution
     """
-    metric = api.ACTIVE_API.compute_metric(
+    metric = api.active_api().compute_metric(
         name, metric="token_capitalness", query=query
     )
 
@@ -173,7 +195,7 @@ def mention_length(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
         level: The mention length level. Accepted values are "token" and "char"
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Defaults to ``Predictions``.
@@ -194,7 +216,7 @@ def mention_length(
         level in accepted_levels
     ), f"Unexpected value for level. Accepted values are {accepted_levels}"
 
-    metric = api.ACTIVE_API.compute_metric(
+    metric = api.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_mention_{level}_length",
         query=query,
@@ -222,7 +244,7 @@ def entity_labels(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Default to ``Predictions``
         labels: The number of top entities to retrieve. Lower numbers will be better performants
@@ -236,7 +258,7 @@ def entity_labels(
         >>> summary.visualize() # will plot a bar chart with results
         >>> summary.data # The top-20 entity tags
     """
-    metric = api.ACTIVE_API.compute_metric(
+    metric = api.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_entity_labels",
         query=query,
@@ -264,7 +286,7 @@ def entity_density(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Default to ``Predictions``.
         interval: The interval for histogram. The entity density is defined in the range 0-1.
@@ -277,7 +299,7 @@ def entity_density(
         >>> summary = entity_density(name="example-dataset")
         >>> summary.visualize()
     """
-    metric = api.ACTIVE_API.compute_metric(
+    metric = api.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_entity_density",
         query=query,
@@ -300,18 +322,18 @@ def entity_capitalness(
 ) -> MetricSummary:
     """Computes the entity capitalness. The entity capitalness splits the entity mention shape in 4 groups:
 
-        ``UPPER``: All charactes in entity mention are upper case
+        ``UPPER``: All characters in entity mention are upper case.
 
-        ``LOWER``: All charactes in entity mention are lower case
+        ``LOWER``: All characters in entity mention are lower case.
 
-        ``FIRST``: The mention is capitalized
+        ``FIRST``: The first character in the mention is upper case.
 
-        ``MIDDLE``: Some character in mention between first and last is capitalized
+        ``MIDDLE``: First character in the mention is lower case and at least one other character is upper case.
 
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Default to ``Predictions``.
     Returns:
@@ -322,7 +344,7 @@ def entity_capitalness(
         >>> summary = entity_capitalness(name="example-dataset")
         >>> summary.visualize()
     """
-    metric = api.ACTIVE_API.compute_metric(
+    metric = api.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_entity_capitalness",
         query=query,
@@ -353,7 +375,7 @@ def entity_consistency(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Default to ``Predictions``
         mentions: The number of top mentions to retrieve.
@@ -371,7 +393,7 @@ def entity_consistency(
         # TODO: Warning???
         threshold = 2
 
-    metric = api.ACTIVE_API.compute_metric(
+    metric = api.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_entity_consistency",
         query=query,
@@ -401,7 +423,7 @@ def f1(name: str, query: Optional[str] = None) -> MetricSummary:
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
+            `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
 
     Returns:
         The F1 metric summary containing precision, recall and the F1 score (averaged and per label).
@@ -417,7 +439,7 @@ def f1(name: str, query: Optional[str] = None) -> MetricSummary:
         >>> import pandas as pd
         >>> pd.DataFrame(summary.data.values(), index=summary.data.keys())
     """
-    metric = api.ACTIVE_API.compute_metric(name, metric="F1", query=query)
+    metric = api.active_api().compute_metric(name, metric="F1", query=query)
 
     return MetricSummary.new_summary(
         data=metric.results,

@@ -53,7 +53,10 @@
         >
           <span
             :class="[
-              `color_${entities.filter((e) => e.text === key)[0].colorId}`,
+              `color_${
+                entities.filter((e) => e.text === key)[0].colorId %
+                $entitiesMaxColors
+              }`,
               'entity',
               activeTab,
             ]"
@@ -146,14 +149,6 @@ export default {
 </script>
 <style lang="scss" scoped>
 .sidebar {
-  &__title {
-    color: $font-secondary-dark;
-    margin-top: 0.5em;
-    @include font-size(20px);
-    font-weight: 700;
-  }
-}
-.sidebar {
   &__tabs {
     display: flex;
     padding-bottom: 1em;
@@ -162,18 +157,22 @@ export default {
       display: inline-block;
     }
     a {
+      font-family: $sff;
       width: 100%;
-      border: 1px solid palette(grey, smooth);
-      border-radius: 2px;
+      border-radius: $radius;
       text-align: center;
       color: $font-secondary;
       text-decoration: none;
       margin: 0 5px;
       outline: none;
       @include font-size(13px);
-      padding: 0.3em;
+      padding: 0.5em;
       &.active {
-        background: palette(grey, light);
+        color: $primary-color;
+        background: palette(grey, smooth);
+      }
+      &:hover {
+        background: palette(grey, smooth);
       }
     }
   }
@@ -185,10 +184,11 @@ export default {
     font-weight: 600;
   }
   .scroll {
-    max-height: calc(100vh - 500px);
+    max-height: calc(100vh - 250px);
     padding-right: 1em;
     margin-right: -1em;
     overflow: auto;
+    @extend %hide-scrollbar;
   }
 }
 $colors: 50;

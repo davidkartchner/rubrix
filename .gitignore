@@ -3,7 +3,7 @@ build/
 dist/
 *.egg-info/
 .pytest_cache/
-
+.pyre/
 # pyenv
 .python-version
 
@@ -135,6 +135,3 @@ package-lock.json
 
 # App generated files
 src/**/server/static/
-
-# setuptools_scm generated file
-src/rubrix/_version.py

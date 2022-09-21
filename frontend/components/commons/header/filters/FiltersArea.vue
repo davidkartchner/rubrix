@@ -43,7 +43,6 @@
 </template>
 
 <script>
-import "assets/icons/config";
 import { mapActions } from "vuex";
 export default {
   props: {
@@ -121,19 +120,7 @@ export default {
   padding-top: 0;
   padding-bottom: 0;
   margin-left: 0;
-  padding-right: calc(4em + 45px);
-  &--intro {
-    padding-top: 2em;
-    margin-bottom: 1.5em;
-    &:after {
-      border-bottom: 1px solid $line-light-color;
-      content: "";
-      margin-bottom: 1.5em;
-      position: absolute;
-      left: 0;
-      right: 0;
-    }
-  }
+  @extend %collapsable-if-metrics !optional;
 }
 
 .filters {
@@ -149,7 +136,7 @@ export default {
     align-items: center;
   }
   &__content {
-    padding: 0.5em 0 0.5em 0;
+    padding: 32px 0;
     position: relative;
     width: 100%;
   }
@@ -159,8 +146,11 @@ export default {
     width: calc(100% - 300px);
   }
   &__searchbar {
-    margin-right: 2em;
+    margin-right: 10px;
     width: 100%;
+    @include media(">desktop") {
+      margin-right: 15px;
+    }
     &.--extended {
       width: 100%;
       margin-right: 0;

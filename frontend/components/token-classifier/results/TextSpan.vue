@@ -19,7 +19,10 @@
   <span class="span__text">
     <EntityHighlight
       v-if="token.entity"
-      :class="['color_' + tag_color, { zindex3: showEntitiesSelector }]"
+      :class="[
+        'color_' + (tag_color % this.$entitiesMaxColors),
+        { zindex3: showEntitiesSelector },
+      ]"
       :span="token"
       :dataset="dataset"
       :record="record"
@@ -220,6 +223,9 @@ $hue: 360;
       padding-bottom: 3px;
       border-bottom: 5px solid $rcolor;
     }
+    & ::v-deep .highlight__tooltip {
+      background: $rcolor;
+    }
     &.annotation ::v-deep .highlight__tooltip:after {
       border-color: $rcolor transparent transparent transparent;
     }
@@ -244,9 +250,6 @@ $hue: 360;
     &:hover {
       border: 2px solid mix(black, $rcolor, 20%);
     }
-  }
-  .color_#{$i - 1} ::v-deep .highlight__tooltip {
-    background: $rcolor;
   }
 }
 </style>

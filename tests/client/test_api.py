@@ -12,13 +12,13 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import concurrent.futures
 import datetime
 from time import sleep
 from typing import Iterable
 
 import datasets
 import httpx
-import pandas
 import pandas as pd
 import pytest
 
@@ -34,8 +34,11 @@ from rubrix.client.sdk.commons.errors import (
     UnauthorizedApiError,
     ValidationApiError,
 )
-from rubrix.server.security import auth
-from rubrix.server.tasks.text_classification import TextClassificationSearchResults
+from rubrix.client.sdk.users import api as users_api
+from rubrix.client.sdk.users.models import User
+from rubrix.server.apis.v0.models.text_classification import (
+    TextClassificationSearchResults,
+)
 from tests.server.test_api import create_some_data_for_text_classification
 
 
@@ -46,12 +49,10 @@ def mock_response_200(monkeypatch):
     It will return a 200 status code, emulating the correct login.
     """
 
-    def mock_get(url, *args, **kwargs):
-        if "/api/me" in url:
-            return httpx.Response(status_code=200, json={"username": "booohh"})
-        return httpx.Response(status_code=200)
+    def mock_get(*args, **kwargs):
+        return User(username="booohh")
 
-    monkeypatch.setattr(httpx, "get", mock_get)
+    monkeypatch.setattr(users_api, "whoami", mock_get)
 
 
 @pytest.fixture
@@ -62,9 +63,9 @@ def mock_response_500(monkeypatch):
     """
 
     def mock_get(*args, **kwargs):
-        return httpx.Response(status_code=500)
+        raise GenericApiError("Mock error")
 
-    monkeypatch.setattr(httpx, "get", mock_get)
+    monkeypatch.setattr(users_api, "whoami", mock_get)
 
 
 @pytest.fixture
@@ -74,32 +75,30 @@ def mock_response_token_401(monkeypatch):
     It will return a 401 status code, emulating an invalid credentials error when using tokens to log in.
     Iterable structure to be able to pass the first 200 status code check
     """
-    response_200 = httpx.Response(status_code=200)
-    response_401 = httpx.Response(status_code=401)
 
     def mock_get(*args, **kwargs):
         if kwargs["url"] == "fake_url/api/me":
-            return response_401
+            raise UnauthorizedApiError()
         elif kwargs["url"] == "fake_url/api/docs/spec.json":
-            return response_200
+            return User(username="booohh")
 
-    monkeypatch.setattr(httpx, "get", mock_get)
+    monkeypatch.setattr(users_api, "whoami", mock_get)
 
 
 def test_init_correct(mock_response_200):
-    """Testing correct default initalization
+    """Testing correct default initialization
 
     It checks if the _client created is a RubrixClient object.
     """
 
-    api.init()
-    assert api.ACTIVE_API._client == AuthenticatedClient(
+    assert api.active_api()._client == AuthenticatedClient(
         base_url="http://localhost:6900", token="rubrix.apikey", timeout=60.0
     )
-    assert api.ACTIVE_API._user == api.User(username="booohh")
+
+    assert api.__ACTIVE_API__._user == api.User(username="booohh")
 
     api.init(api_url="mock_url", api_key="mock_key", workspace="mock_ws", timeout=42)
-    assert api.ACTIVE_API._client == AuthenticatedClient(
+    assert api.__ACTIVE_API__._client == AuthenticatedClient(
         base_url="mock_url",
         token="mock_key",
         timeout=42,
@@ -107,30 +106,8 @@ def test_init_correct(mock_response_200):
     )
 
 
-def test_init_incorrect(mock_response_500):
-    """Testing incorrect default initalization
-
-    It checks an Exception is raised with the correct message.
-    """
-
-    with pytest.raises(
-        Exception,
-        match="Rubrix server returned an error with http status: 500\nError details: \[\{'response': None\}\]",
-    ):
-        api.init()
-
-
-def test_init_token_auth_fail(mock_response_token_401):
-    """Testing initalization with failed authentication
-
-    It checks an Exception is raised with the correct message.
-    """
-    with pytest.raises(UnauthorizedApiError):
-        api.init(api_url="fake_url", api_key="422")
-
-
 def test_init_evironment_url(mock_response_200, monkeypatch):
-    """Testing initalization with api_url provided via environment variable
+    """Testing initialization with api_url provided via environment variable
 
     It checks the url in the environment variable gets passed to client.
     """
@@ -139,7 +116,7 @@ def test_init_evironment_url(mock_response_200, monkeypatch):
     monkeypatch.setenv("RUBRIX_WORKSPACE", "mock_workspace")
     api.init()
 
-    assert api.ACTIVE_API._client == AuthenticatedClient(
+    assert api.__ACTIVE_API__._client == AuthenticatedClient(
         base_url="mock_url",
         token="mock_key",
         timeout=60,
@@ -148,12 +125,12 @@ def test_init_evironment_url(mock_response_200, monkeypatch):
 
 
 def test_trailing_slash(mock_response_200):
-    """Testing initalization with provided api_url via environment variable and argument
+    """Testing initialization with provided api_url via environment variable and argument
 
     It checks the trailing slash is removed in all cases
     """
     api.init(api_url="http://mock.com/")
-    assert api.ACTIVE_API._client.base_url == "http://mock.com"
+    assert api.__ACTIVE_API__._client.base_url == "http://mock.com"
 
 
 def test_log_something(monkeypatch, mocked_client):
@@ -188,11 +165,9 @@ def test_load_limits(mocked_client):
 
     limit_data_to = 10
     ds = api.load(name=dataset, limit=limit_data_to)
-    assert isinstance(ds, pandas.DataFrame)
     assert len(ds) == limit_data_to
 
     ds = api.load(name=dataset, limit=limit_data_to)
-    assert isinstance(ds, pandas.DataFrame)
     assert len(ds) == limit_data_to
 
 
@@ -230,6 +205,36 @@ def test_log_passing_empty_records_list(mocked_client):
         api.InputValueError, match="Empty record list has been passed as argument."
     ):
         api.log(records=[], name="ds")
+
+
+def test_log_background(mocked_client):
+    """Verify that logs can be delayed via the background parameter."""
+    dataset_name = "test_log_background"
+    mocked_client.delete(f"/api/datasets/{dataset_name}")
+
+    # Log in the background, and extract the future
+    sample_text = "Sample text for testing"
+    future = api.log(
+        rb.TextClassificationRecord(text=sample_text),
+        name=dataset_name,
+        background=True,
+    )
+    assert isinstance(future, concurrent.futures.Future)
+
+    # The dataset does not exist yet
+    with pytest.raises(NotFoundApiError):
+        dataset = api.load(dataset_name)
+
+    # Log the record to Rubrix
+    try:
+        future.result()
+    finally:
+        future.cancel()
+
+    # The dataset now exists and holds one record
+    dataset = api.load(dataset_name)
+    assert len(dataset) == 1
+    assert dataset[0].text == sample_text
 
 
 @pytest.mark.parametrize(
@@ -280,13 +285,13 @@ def test_general_log_load(mocked_client, monkeypatch, request, records, dataset_
 
     # log single records
     api.log(records[0], name=dataset_names[0])
-    dataset = api.load(dataset_names[0], as_pandas=False)
+    dataset = api.load(dataset_names[0])
     records[0].metrics = dataset[0].metrics
     assert dataset[0] == records[0]
 
     # log list of records
     api.log(records, name=dataset_names[1])
-    dataset = api.load(dataset_names[1], as_pandas=False)
+    dataset = api.load(dataset_names[1])
     # check if returned records can be converted to other formats
     assert isinstance(dataset.to_datasets(), datasets.Dataset)
     assert isinstance(dataset.to_pandas(), pd.DataFrame)
@@ -297,7 +302,7 @@ def test_general_log_load(mocked_client, monkeypatch, request, records, dataset_
 
     # log dataset
     api.log(dataset_class(records), name=dataset_names[2])
-    dataset = api.load(dataset_names[2], as_pandas=False)
+    dataset = api.load(dataset_names[2])
     assert len(dataset) == len(records)
     for record, expected in zip(dataset, records):
         record.metrics = expected.metrics
@@ -307,7 +312,7 @@ def test_general_log_load(mocked_client, monkeypatch, request, records, dataset_
 def test_passing_wrong_iterable_data(mocked_client):
     dataset_name = "test_log_single_records"
     mocked_client.delete(f"/api/datasets/{dataset_name}")
-    with pytest.raises(Exception, match="Unknown record type passed"):
+    with pytest.raises(Exception, match="Unknown record type"):
         api.log({"a": "010", "b": 100}, name=dataset_name)
 
 
@@ -364,27 +369,28 @@ def test_log_with_wrong_name(mocked_client):
 
 def test_dataset_copy(mocked_client):
     dataset = "test_dataset_copy"
-    dataset_copy = "new_dataset"
+    dataset_copy = "test_dataset_copy_new"
     other_workspace = "test_dataset_copy_ws"
 
-    mocked_client.delete(f"/api/datasets/{dataset}")
-    mocked_client.delete(f"/api/datasets/{dataset_copy}")
     mocked_client.delete(f"/api/datasets/{dataset_copy}?workspace={other_workspace}")
+    mocked_client.delete(f"/api/datasets/{dataset_copy}")
+    mocked_client.delete(f"/api/datasets/{dataset}")
 
-    api.log(
-        rb.TextClassificationRecord(
-            id=0,
-            inputs="This is the record input",
-            annotation_agent="test",
-            annotation=["T"],
-        ),
-        name=dataset,
+    record = rb.TextClassificationRecord(
+        id=0,
+        text="This is the record input",
+        annotation_agent="test",
+        annotation=["T"],
     )
+    api.log(record, name=dataset)
+
     api.copy(dataset, name_of_copy=dataset_copy)
-    df = api.load(name=dataset)
-    df_copy = api.load(name=dataset_copy)
+    ds, ds_copy = api.load(name=dataset), api.load(name=dataset_copy)
+    df, df_copy = ds.to_pandas(), ds_copy.to_pandas()
 
     assert df.equals(df_copy)
+
+    api.log(record, name=dataset_copy)
 
     with pytest.raises(AlreadyExistsApiError):
         api.copy(dataset, name_of_copy=dataset_copy)
@@ -408,16 +414,17 @@ def test_dataset_copy_to_another_workspace(mocked_client):
         api.log(
             rb.TextClassificationRecord(
                 id=0,
-                inputs="This is the record input",
+                text="This is the record input",
                 annotation_agent="test",
                 annotation=["T"],
             ),
             name=dataset,
         )
-        df = api.load(dataset)
+        ds = api.load(dataset)
+        df = ds.to_pandas()
         api.copy(dataset, name_of_copy=dataset_copy, workspace=new_workspace)
         api.set_workspace(new_workspace)
-        df_copy = api.load(dataset_copy)
+        df_copy = api.load(dataset_copy).to_pandas()
         assert df.equals(df_copy)
 
         with pytest.raises(AlreadyExistsApiError):
@@ -444,6 +451,7 @@ def test_update_record(mocked_client):
     )
 
     df = api.load(name=dataset)
+    df = df.to_pandas()
     records = df.to_dict(orient="records")
     assert len(records) == 1
     assert records[0]["annotation"] == "T"
@@ -459,6 +467,7 @@ def test_update_record(mocked_client):
     )
 
     df = api.load(name=dataset)
+    df = df.to_pandas()
     records = df.to_dict(orient="records")
     assert len(records) == 1
     assert records[0]["annotation"] is None
@@ -481,6 +490,7 @@ def test_text_classifier_with_inputs_list(mocked_client):
     )
 
     df = api.load(name=dataset)
+    df = df.to_pandas()
     records = df.to_dict(orient="records")
     assert len(records) == 1
     assert records[0]["inputs"]["text"] == expected_inputs
@@ -504,12 +514,12 @@ def test_load_with_query(mocked_client):
     expected_data = 4
     create_some_data_for_text_classification(mocked_client, dataset, n=expected_data)
     ds = api.load(name=dataset, query="id:1")
+    ds = ds.to_pandas()
     assert len(ds) == 1
     assert ds.id.iloc[0] == 1
 
 
-@pytest.mark.parametrize("as_pandas", [True, False])
-def test_load_as_pandas(mocked_client, as_pandas):
+def test_load_as_pandas(mocked_client):
     dataset = "test_sorted_load"
     mocked_client.delete(f"/api/datasets/{dataset}")
     sleep(1)
@@ -517,40 +527,37 @@ def test_load_as_pandas(mocked_client, as_pandas):
     expected_data = 3
     create_some_data_for_text_classification(mocked_client, dataset, n=expected_data)
 
-    # Check that the default value is True
-    if as_pandas:
-        records = api.load(name=dataset)
-        assert isinstance(records, pandas.DataFrame)
-        assert list(records.id) == [0, 1, 2, 3]
-    else:
-        records = api.load(name=dataset, as_pandas=False)
-        assert isinstance(records, rb.DatasetForTextClassification)
-        assert isinstance(records[0], rb.TextClassificationRecord)
-        assert [record.id for record in records] == [0, 1, 2, 3]
+    records = api.load(name=dataset)
+    assert isinstance(records, rb.DatasetForTextClassification)
+    assert isinstance(records[0], rb.TextClassificationRecord)
+    assert [record.id for record in records] == [0, 1, 2, 3]
 
 
-def test_token_classification_spans(mocked_client):
-    dataset = "test_token_classification_with_consecutive_spans"
+@pytest.mark.parametrize(
+    "span,valid",
+    [
+        ((1, 2), False),
+        ((0, 4), True),
+        ((0, 5), True),  # automatic correction
+    ],
+)
+def test_token_classification_spans(span, valid):
     texto = "Esto es una prueba"
-    item = api.TokenClassificationRecord(
-        text=texto,
-        tokens=texto.split(),
-        prediction=[("test", 1, 2)],  # Inicio y fin son consecutivos
-        prediction_agent="test",
-    )
-    with pytest.raises(
-        Exception, match=r"Defined offset \[s\] is a misaligned entity mention"
-    ):
-        api.log(item, name=dataset)
-
-    item.prediction = [("test", 0, 6)]
-    with pytest.raises(
-        Exception, match=r"Defined offset \[Esto e\] is a misaligned entity mention"
-    ):
-        api.log(item, name=dataset)
-
-    item.prediction = [("test", 0, 4)]
-    api.log(item, name=dataset)
+    if valid:
+        rb.TokenClassificationRecord(
+            text=texto,
+            tokens=texto.split(),
+            prediction=[("test", *span)],
+        )
+    else:
+        with pytest.raises(
+            ValueError, match="The entity spans \['s'\] are not aligned"
+        ):
+            rb.TokenClassificationRecord(
+                text=texto,
+                tokens=texto.split(),
+                prediction=[("test", *span)],
+            )
 
 
 def test_load_text2text(mocked_client):
@@ -589,7 +596,7 @@ def test_client_workspace(mocked_client):
             api.set_workspace(None)
 
         # Mocking user
-        api.ACTIVE_API._user.workspaces = ["a", "b"]
+        api.__ACTIVE_API__._user.workspaces = ["a", "b"]
 
         with pytest.raises(Exception, match="Wrong provided workspace c"):
             api.set_workspace("c")
@@ -603,7 +610,7 @@ def test_client_workspace(mocked_client):
 def test_load_sort(mocked_client):
     records = [
         rb.TextClassificationRecord(
-            inputs="test text",
+            text="test text",
             id=i,
         )
         for i in ["1str", 1, 2, 11, "2str", "11str"]
@@ -614,18 +621,21 @@ def test_load_sort(mocked_client):
     api.log(records, name=dataset)
 
     # check sorting policies
-    df = api.load(name=dataset)
+    ds = api.load(name=dataset)
+    df = ds.to_pandas()
     assert list(df.id) == [1, 11, "11str", "1str", 2, "2str"]
-    df = api.load(name=dataset, ids=[1, 2, 11])
+    ds = api.load(name=dataset, ids=[1, 2, 11])
+    df = ds.to_pandas()
     assert list(df.id) == [1, 2, 11]
-    df = api.load(name=dataset, ids=["1str", "2str", "11str"])
+    ds = api.load(name=dataset, ids=["1str", "2str", "11str"])
+    df = ds.to_pandas()
     assert list(df.id) == ["11str", "1str", "2str"]
 
 
 def test_load_workspace_from_different_workspace(mocked_client):
     records = [
         rb.TextClassificationRecord(
-            inputs="test text",
+            text="test text",
             id=i,
         )
         for i in ["1str", 1, 2, 11, "2str", "11str"]
@@ -639,11 +649,13 @@ def test_load_workspace_from_different_workspace(mocked_client):
         api.log(records, name=dataset)
 
         # check sorting policies
-        df = api.load(name=dataset)
+        ds = api.load(name=dataset)
+        df = ds.to_pandas()
         assert list(df.id) == [1, 11, "11str", "1str", 2, "2str"]
 
         api.set_workspace(workspace)
         df = api.load(name=dataset)
+        df = df.to_pandas()
         assert list(df.id) == [1, 11, "11str", "1str", 2, "2str"]
     finally:
         api.set_workspace(workspace)

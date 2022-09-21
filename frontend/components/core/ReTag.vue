@@ -20,11 +20,13 @@ export default {
   border-radius: 8px;
   padding: 0.3em 1em;
   margin: 3.5px;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 175px;
   vertical-align: top;
   background: palette(grey, bg);
+  word-break: break-word;
+  hyphens: auto;
+  @include media(">desktopLarge") {
+    max-width: 200px;
+  }
 }
 </style>

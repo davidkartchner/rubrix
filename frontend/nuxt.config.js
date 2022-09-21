@@ -54,7 +54,9 @@ export default {
     { src: "~/plugins/virtualScroller.js" },
     { src: "~/plugins/toast.js" },
     { src: "~/plugins/highlight-search.js" },
+    { src: "~/plugins/copy-to-clipboard.js" },
     { src: "~/plugins/filters.js" },
+    { src: "~/plugins/variables.js" },
   ],
 
   // Auto import components (https://go.nuxtjs.dev/config-components)
@@ -77,12 +79,7 @@ export default {
     "@nuxtjs/axios",
     "@nuxtjs/dotenv",
     "@nuxtjs/auth-next",
-    [
-      "nuxt-highlightjs",
-      {
-        style: "dracula",
-      },
-    ],
+    "nuxt-highlightjs",
     [
       "nuxt-mq",
       {
@@ -124,7 +121,7 @@ export default {
     scss: "./assets/scss/abstract.scss",
   },
 
-  loading: { color: "#0508D9", throttle: 100 },
+  loading: { color: "#0D26C5", throttle: 100 },
 
   auth: {
     strategies: {

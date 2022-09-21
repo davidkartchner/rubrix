@@ -26,17 +26,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ConfigError
 
 from rubrix import __version__ as rubrix_version
-from rubrix.server.commons.es_wrapper import create_es_wrapper
-from rubrix.server.commons.static_rewrite import RewriteStaticFiles
-from rubrix.server.datasets.dao import DatasetsDAO
+from rubrix.logging import configure_logging
+from rubrix.server.daos.backend.elasticsearch import ElasticsearchBackend
+from rubrix.server.daos.datasets import DatasetsDAO
+from rubrix.server.daos.records import DatasetRecordsDAO
+from rubrix.server.errors import APIErrorHandler, EntityNotFoundError
+from rubrix.server.routes import api_router
 from rubrix.server.security import auth
-from rubrix.server.tasks.commons.dao.dao import DatasetRecordsDAO
-
-from ..logging import configure_logging
-from .commons.errors import APIErrorHandler
-from .commons.settings import settings
-from .commons.settings import settings as api_settings
-from .routes import api_router
+from rubrix.server.settings import settings
+from rubrix.server.static_rewrite import RewriteStaticFiles
 
 
 def configure_middleware(app: FastAPI):
@@ -44,7 +42,7 @@ def configure_middleware(app: FastAPI):
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=api_settings.cors_origins,
+        allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -55,6 +53,7 @@ def configure_middleware(app: FastAPI):
 
 def configure_api_exceptions(api: FastAPI):
     """Configures fastapi exception handlers"""
+    api.exception_handler(EntityNotFoundError)(APIErrorHandler.common_exception_handler)
     api.exception_handler(Exception)(APIErrorHandler.common_exception_handler)
     api.exception_handler(RequestValidationError)(
         APIErrorHandler.common_exception_handler
@@ -69,14 +68,14 @@ def configure_api_router(app: FastAPI):
 def configure_app_statics(app: FastAPI):
     """Configure static folder for app"""
     parent_path = Path(__file__).parent.absolute()
+    statics_folder = Path(os.path.join(parent_path, "static"))
+    if not (statics_folder.exists() and statics_folder.is_dir()):
+        return
 
     app.mount(
         "/",
         RewriteStaticFiles(
-            directory=os.path.join(
-                parent_path,
-                "static",
-            ),
+            directory=statics_folder,
             html=True,
             check_dir=False,
         ),
@@ -90,7 +89,7 @@ def configure_app_storage(app: FastAPI):
         import opensearchpy
 
         try:
-            es_wrapper = create_es_wrapper()
+            es_wrapper = ElasticsearchBackend.get_instance()
             dataset_records: DatasetRecordsDAO = DatasetRecordsDAO(es_wrapper)
             datasets: DatasetsDAO = DatasetsDAO.get_instance(
                 es_wrapper, records_dao=dataset_records
@@ -123,7 +122,7 @@ app = FastAPI(
     description="Rubrix API",
     # Disable default openapi configuration
     openapi_url="/api/docs/spec.json",
-    docs_url="/api/docs" if api_settings.docs_enabled else None,
+    docs_url="/api/docs" if settings.docs_enabled else None,
     redoc_url=None,
     version=str(rubrix_version),
 )

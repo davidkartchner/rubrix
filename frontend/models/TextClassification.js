@@ -43,6 +43,44 @@ class TextClassificationRecord extends BaseRecord {
     }
     return [this.prediction.labels[0].class];
   }
+
+  get annotated_as() {
+    if (this.annotation === undefined) {
+      return [];
+    }
+    let labels = this.annotation.labels;
+    if (this.multi_label) {
+      return labels.map((l) => l.class);
+    }
+    return [this.annotation.labels[0].class];
+  }
+
+  get predicted() {
+    if (
+      !this.multi_label &&
+      this.prediction &&
+      this.predicted_as &&
+      this.annotated_as
+    ) {
+      return this.predicted_as[0] === this.annotated_as[0] ? "ok" : "ko";
+    }
+    return undefined;
+  }
+
+  get clipboardText() {
+    if (Object.keys(this.inputs).length > 1) {
+      return Object.keys(this.inputs)
+        .map(
+          (key, index) =>
+            `${key.toUpperCase()}\n${this.inputs[key]}${
+              Object.keys(this.inputs).length === index + 1 ? "" : "\n\n"
+            }`
+        )
+        .join("");
+    } else {
+      return Object.values(this.inputs);
+    }
+  }
 }
 
 class TextClassificationSearchQuery extends BaseSearchQuery {
@@ -78,6 +116,7 @@ class TextClassificationDataset extends ObservationDataset {
   static fields() {
     return {
       ...super.fields(),
+      settings: this.attr({}),
       _labels: this.attr([]),
       // Search fields
       query: this.attr({}, (data) => {
@@ -105,6 +144,7 @@ class TextClassificationDataset extends ObservationDataset {
   };
 
   async initialize() {
+    const settings = await this._getDatasetSettings();
     const { labels } = await this.fetchMetricSummary("dataset_labels");
     const entity = this.getTaskDatasetClass();
     const isMultiLabel = this.results.records.some((r) => r.multi_label);
@@ -115,6 +155,7 @@ class TextClassificationDataset extends ObservationDataset {
           owner: this.owner,
           name: this.name,
           _labels: labels,
+          settings,
           isMultiLabel,
         },
       ],
@@ -127,7 +168,9 @@ class TextClassificationDataset extends ObservationDataset {
 
   async _getRule({ query }) {
     const { response } = await TextClassificationDataset.api().get(
-      `/datasets/${this.task}/${this.name}/labeling/rules/${query}`,
+      `/datasets/${this.task}/${this.name}/labeling/rules/${encodeURIComponent(
+        query
+      )}`,
       {
         // Ignore errors related to rule not found
         validateStatus: function (status) {
@@ -143,7 +186,9 @@ class TextClassificationDataset extends ObservationDataset {
 
   async _deleteRule({ query }) {
     const { response } = await TextClassificationDataset.api().delete(
-      `/datasets/${this.task}/${this.name}/labeling/rules/${query}`
+      `/datasets/${this.task}/${this.name}/labeling/rules/${encodeURIComponent(
+        query
+      )}`
     );
     return response.data;
   }
@@ -208,7 +253,9 @@ class TextClassificationDataset extends ObservationDataset {
     );
     if (response.status === 409) {
       const apiResult = await TextClassificationDataset.api().patch(
-        `/datasets/${this.task}/${this.name}/labeling/rules/${query}`,
+        `/datasets/${this.task}/${
+          this.name
+        }/labeling/rules/${encodeURIComponent(query)}`,
         { labels, description }
       );
       response = apiResult.response;
@@ -218,7 +265,9 @@ class TextClassificationDataset extends ObservationDataset {
   }
 
   async _fetchRuleMetrics({ query, labels }) {
-    var url = `/datasets/${this.task}/${this.name}/labeling/rules/${query}/metrics`;
+    var url = `/datasets/${this.task}/${
+      this.name
+    }/labeling/rules/${encodeURIComponent(query)}/metrics`;
     if (labels !== undefined) {
       const urlLabels = labels.map((label) => `label=${label}`);
       url += `?${urlLabels.join("&")}`;
@@ -274,6 +323,12 @@ class TextClassificationDataset extends ObservationDataset {
   }
 
   get labels() {
+    const predefinedLabels =
+      this.settings.label_schema && this.settings.label_schema.labels;
+
+    if (predefinedLabels) {
+      return predefinedLabels.map((l) => l.id).sort();
+    }
     const { labels } = (this.metadata || {})[USER_DATA_METADATA_KEY] || {};
     const aggregations = this.globalResults.aggregations;
     const label2str = (label) => label.class;
@@ -297,7 +352,6 @@ class TextClassificationDataset extends ObservationDataset {
           .concat(Object.keys(aggregations.predicted_as))
       ),
     ];
-
     uniqueLabels.sort();
     return uniqueLabels;
   }

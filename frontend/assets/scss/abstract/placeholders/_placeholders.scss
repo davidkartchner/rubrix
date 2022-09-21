@@ -81,6 +81,16 @@
     margin: 0 auto;
     padding: 4em;
 }
+%collapsable-if-metrics {
+  padding-right: calc($sidebarMenuWidth + 56px);
+  transition: padding 0.25s linear 0.2s;
+  .--metrics & {
+    @include media(">desktop") {
+      padding-right: calc($sidebarWidth + 25px);
+      transition: padding 0.25s linear;
+    }
+  }
+}
 
 // buttons
 %button {
@@ -135,7 +145,7 @@
   border: 0;
   &:hover,
   &:focus {
-      text-decoration: underline;
+      text-decoration: none;
       background: none;
   }
 }
@@ -176,7 +186,7 @@
   &:after {
     content: attr(data-title);
     @extend %tooltip;
-  }  
+  }
 }
 %hastooltip {
   &:after {
@@ -192,8 +202,8 @@
     content: "";
     position: absolute;
     display: block;
-    width: 0; 
-    height: 0; 
+    width: 0;
+    height: 0;
     opacity: 0;
     pointer-events: none;
   }
@@ -202,12 +212,21 @@
       width: auto;
       height: auto;
       opacity: 1;
-      transition: opacity 0.2s ease;
+      transition: opacity 0.1s ease 0.2s;
       z-index: 2;
     }
     &:before {
       opacity: 1;
-      transition: opacity 0.2s ease;
+      transition: opacity 0.1s ease 0.2s;
     }
+  }
+}
+%hide-scrollbar {
+  /* Hide scrollbar for IE, Edge and Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  &::-webkit-scrollbar {
+    display: none;
   }
 }

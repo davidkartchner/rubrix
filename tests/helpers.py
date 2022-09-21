@@ -1,36 +1,79 @@
+#  Copyright 2021-present, the Recognai S.L. team.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 from typing import List
 
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
-import rubrix
-from rubrix._constants import API_KEY_HEADER_NAME
+from rubrix._constants import API_KEY_HEADER_NAME, RUBRIX_WORKSPACE_HEADER_NAME
+from rubrix.client.api import active_api
 from rubrix.server.security import auth
 from rubrix.server.security.auth_provider.local.settings import settings
+from rubrix.server.security.auth_provider.local.users.model import UserInDB
 
 
 class SecuredClient:
     def __init__(self, client: TestClient):
         self._client = client
         self._header = {API_KEY_HEADER_NAME: settings.default_apikey}
+        self._current_user = None
 
     @property
     def fastpi_app(self) -> FastAPI:
         return self._client.app
 
+    def change_current_user(self, username):
+        default_user = auth.users.__dao__.__users__["rubrix"]
+        new_user = UserInDB(
+            username=username,
+            hashed_password=username,  # Even if required, we can ignore it
+            api_key=username,
+            workspaces=["rubrix"],  # The default workspace
+        )
+
+        auth.users.__dao__.__users__[username] = new_user
+        rb_api = active_api()
+        rb_api._user = new_user
+        rb_api.set_workspace(default_user.username)
+        rb_api.client.token = new_user.api_key
+        self._header[API_KEY_HEADER_NAME] = new_user.api_key
+        self._header[RUBRIX_WORKSPACE_HEADER_NAME] = "rubrix"
+
+    def reset_default_user(self):
+        default_user = auth.users.__dao__.__users__["rubrix"]
+
+        rb_api = active_api()
+        rb_api._user = default_user
+        rb_api.client.token = default_user.api_key
+        rb_api.client.headers.pop(RUBRIX_WORKSPACE_HEADER_NAME)
+        self._header[API_KEY_HEADER_NAME] = default_user.api_key
+
     def add_workspaces_to_rubrix_user(self, workspaces: List[str]):
         rubrix_user = auth.users.__dao__.__users__["rubrix"]
-        workspaces = workspaces or []
-        workspaces.extend(rubrix_user.workspaces or [])
-        rubrix_user.workspaces = workspaces
+        rubrix_user.workspaces.extend(workspaces or [])
 
-        rubrix.init()
+        rb_api = active_api()
+        rb_api._user = rubrix_user
 
     def reset_rubrix_workspaces(self):
         rubrix_user = auth.users.__dao__.__users__["rubrix"]
-        rubrix_user.workspaces = None
+        rubrix_user.workspaces = ["", "rubrix"]
 
-        rubrix.init()
+        rb_api = active_api()
+        rb_api._user = rubrix_user
+        rb_api.set_workspace("rubrix")
 
     def delete(self, *args, **kwargs):
         request_headers = kwargs.pop("headers", {})
@@ -41,6 +84,9 @@ class SecuredClient:
         request_headers = kwargs.pop("headers", {})
         headers = {**self._header, **request_headers}
         return self._client.post(*args, headers=headers, **kwargs)
+
+    async def post_async(self, *args, **kwargs):
+        return self.post(*args, **kwargs)
 
     def get(self, *args, **kwargs):
         request_headers = kwargs.pop("headers", {})

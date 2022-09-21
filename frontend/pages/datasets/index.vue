@@ -22,8 +22,9 @@
       <div class="main">
         <app-header
           :copy-button="false"
-          :breadcrumbs="[{ link: `/datasets`, name: 'Datasets' }]"
+          :breadcrumbs="breadcrumbs"
           :sticky="false"
+          @breadcrumb-action="onBreadcrumbAction($event)"
         />
         <Error
           v-if="$fetchState.error"
@@ -37,6 +38,7 @@
           </div>
           <div>
             <ReTableInfo
+              ref="table"
               :data="datasets"
               :sorted-order="sortedOrder"
               :sorted-by-field="sortedByField"
@@ -57,7 +59,11 @@
           </div>
         </div>
       </div>
-      <sidebar-menu @refresh="$fetch" />
+      <sidebar-menu
+        class="home__sidebar"
+        @refresh="$fetch"
+        :sidebar-items="sidebarItems"
+      />
     </div>
   </div>
 </template>
@@ -66,10 +72,12 @@
 import { ObservationDataset } from "@/models/Dataset";
 import { mapActions } from "vuex";
 import { currentWorkspace } from "@/models/Workspace";
+import { Base64 } from "js-base64";
 export default {
   layout: "app",
   data: () => ({
     querySearch: undefined,
+    breadcrumbs: [{ action: "clearFilters", name: "Datasets" }],
     tableColumns: [
       { name: "Name", field: "name", class: "table-info__title", type: "link" },
       {
@@ -86,7 +94,13 @@ export default {
         type: "task",
         filtrable: "true",
       },
-      { name: "Tags", field: "tags", class: "text", type: "object" },
+      {
+        name: "Tags",
+        field: "tags",
+        class: "text",
+        type: "object",
+        filtrable: "true",
+      },
       { name: "Created at", field: "created_at", class: "date", type: "date" },
       {
         name: "Updated at",
@@ -96,10 +110,10 @@ export default {
       },
     ],
     actions: [
-      { name: "delete", icon: "delete", title: "Delete dataset" },
+      { name: "delete", icon: "trash-empty", title: "Delete dataset" },
       {
         name: "copy",
-        icon: "copy-url",
+        icon: "link",
         title: "Copy url to clipboard",
         tooltip: "Copied",
       },
@@ -118,10 +132,24 @@ export default {
   computed: {
     activeFilters() {
       const workspaces = this.workspaces;
-      if (workspaces) {
-        return [{ column: "owner", values: workspaces }];
-      }
-      return [];
+      const tasks = this.tasks;
+      const tags = this.tags;
+      return [
+        { column: "owner", values: workspaces || [] },
+        { column: "task", values: tasks || [] },
+        { column: "tags", values: tags || [] },
+      ];
+    },
+    sidebarItems() {
+      return [
+        {
+          id: "refresh",
+          tooltip: "Refresh",
+          icon: "refresh",
+          group: "Refresh",
+          action: "refresh",
+        },
+      ];
     },
     datasets() {
       return ObservationDataset.all().map((dataset) => {
@@ -138,6 +166,22 @@ export default {
         _workspaces = [_workspaces];
       }
       return _workspaces;
+    },
+    tasks() {
+      let _tasks = this.$route.query.task;
+      if (typeof _tasks == "string") {
+        _tasks = [_tasks];
+      }
+      return _tasks;
+    },
+    tags() {
+      let _tags = this.$route.query.tags
+        ? JSON.parse(Base64.decode(this.$route.query.tags))
+        : undefined;
+      if (typeof _tags == "string") {
+        _tags = [_tags];
+      }
+      return _tags;
     },
     workspace() {
       // THIS IS WRONG !!!
@@ -165,15 +209,32 @@ export default {
       fetchDatasets: "entities/datasets/fetchAll",
       _deleteDataset: "entities/datasets/deleteDataset",
     }),
-
     onColumnFilterApplied({ column, values }) {
       if (column === "owner") {
         if (values !== this.workspaces) {
-          this.$router.replace({ query: { workspace: values } });
+          this.$router.push({
+            query: { ...this.$route.query, workspace: values },
+          });
+        }
+      }
+      if (column === "task") {
+        if (values !== this.tasks) {
+          this.$router.push({ query: { ...this.$route.query, task: values } });
+        }
+      }
+      if (column === "tags") {
+        if (values !== this.tags) {
+          this.$router.push({
+            query: {
+              ...this.$route.query,
+              tags: values.length
+                ? Base64.encodeURI(JSON.stringify(values))
+                : undefined,
+            },
+          });
         }
       }
     },
-
     datasetWorkspace(dataset) {
       var workspace = dataset.owner;
       if (workspace === null || workspace === "null") {
@@ -181,7 +242,6 @@ export default {
       }
       return `/datasets/${workspace}/${dataset.name}`;
     },
-
     onActionClicked(action, dataset) {
       switch (action) {
         case "delete":
@@ -211,13 +271,7 @@ export default {
       this.copy(route);
     },
     copy(id) {
-      const myTemporaryInputElement = document.createElement("input");
-      myTemporaryInputElement.type = "text";
-      myTemporaryInputElement.className = "hidden-input";
-      myTemporaryInputElement.value = id;
-      document.body.appendChild(myTemporaryInputElement);
-      myTemporaryInputElement.select();
-      document.execCommand("Copy");
+      this.$copyToClipboard(id);
     },
     showConfirmDatasetDeletion(dataset) {
       this.datasetCompositeId = dataset.id;
@@ -236,6 +290,19 @@ export default {
     closeModal() {
       this.datasetCompositeId = undefined;
     },
+    async clearFilters() {
+      if (this.$refs.table) {
+        await this.activeFilters.forEach((filter) => {
+          this.$refs.table.onApplyFilters({ field: filter.column }, []);
+        });
+        this.$router.push({ path: "/datasets" });
+      }
+    },
+    onBreadcrumbAction(e) {
+      if (e === "clearFilters") {
+        this.clearFilters();
+      }
+    },
   },
 };
 </script>
@@ -251,7 +318,7 @@ export default {
   @extend %container;
   padding-top: 0.2em;
   padding-bottom: 0;
-  padding-right: calc(4em + 45px);
+  padding-right: calc($sidebarMenuWidth + 15px);
   &--intro {
     padding-top: 2em;
     margin-bottom: 1.5em;
@@ -282,5 +349,14 @@ export default {
   margin-right: 1em;
   margin-bottom: 2em;
   @include font-size(18px);
+}
+
+.home {
+  &__sidebar.sidebar {
+    position: fixed;
+    top: 56px;
+    right: 0;
+    border-left: 1px solid palette(grey, smooth);
+  }
 }
 </style>

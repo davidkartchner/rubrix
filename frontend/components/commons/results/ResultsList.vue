@@ -95,7 +95,7 @@
   </span>
 </template>
 <script>
-import "assets/icons/empty-results";
+import "assets/icons/unavailable";
 import { mapActions } from "vuex";
 export default {
   props: {
@@ -110,7 +110,7 @@ export default {
       selectedRecord: undefined,
       emptySearchInfo: {
         // message: "There is no result. <br />Try another query.",
-        icon: "empty-results",
+        icon: "unavailable",
       },
     };
   },
@@ -167,37 +167,21 @@ export default {
 <style lang="scss" scoped>
 .content {
   $this: &;
-  padding: 0;
   width: 100%;
   position: relative;
   margin-bottom: 0;
   list-style: none;
-  padding-right: calc(4em + 45px);
   z-index: 0;
-  .--metrics & {
-    @include media(">desktop") {
-      width: 100%;
-      padding-right: calc(294px + 100px);
-      transition: padding 0.1s ease-in-out;
-    }
-  }
-  @include media(">desktop") {
-    transition: padding 0.1s ease-in-out;
-    width: 100%;
-    padding-right: 100px;
-  }
+  @extend %collapsable-if-metrics !optional;
   .results-scroll {
     height: 100vh !important;
     overflow: auto;
     padding-left: 4em;
     padding-bottom: 260px;
     transition: padding 0s ease-in-out 0.1s;
-    &::-webkit-scrollbar {
-      display: none;
-    }
+    @extend %hide-scrollbar;
   }
   &__li {
-    margin-bottom: -1px;
     position: relative;
     min-height: 80px;
   }
@@ -207,12 +191,10 @@ export default {
 <style lang="scss">
 .vue-recycle-scroller__item-wrapper {
   box-sizing: content-box;
-  padding-bottom: 260px;
 }
 .vue-recycle-scroller__item-view {
   box-sizing: border-box;
 }
-
 $maxItemsperPage: 20;
 @for $i from 0 through $maxItemsperPage {
   .vue-recycle-scroller__item-view:nth-of-type(#{$i}) {

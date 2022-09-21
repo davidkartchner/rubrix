@@ -30,16 +30,16 @@ from rubrix.client.sdk.text_classification.models import (
 from rubrix.client.sdk.text_classification.models import (
     TextClassificationRecord as SdkTextClassificationRecord,
 )
-from rubrix.server.tasks.text_classification.api.model import (
+from rubrix.server.apis.v0.models.text_classification import (
     LabelingRule as ServerLabelingRule,
 )
-from rubrix.server.tasks.text_classification.api.model import (
+from rubrix.server.apis.v0.models.text_classification import (
     LabelingRuleMetricsSummary as ServerLabelingRuleMetricsSummary,
 )
-from rubrix.server.tasks.text_classification.api.model import (
-    TextClassificationBulkData as ServerTextClassificationBulkData,
+from rubrix.server.apis.v0.models.text_classification import (
+    TextClassificationBulkRequest as ServerTextClassificationBulkData,
 )
-from rubrix.server.tasks.text_classification.api.model import (
+from rubrix.server.apis.v0.models.text_classification import (
     TextClassificationQuery as ServerTextClassificationQuery,
 )
 
@@ -48,18 +48,14 @@ def test_bulk_data_schema(helpers):
     client_schema = TextClassificationBulkData.schema()
     server_schema = ServerTextClassificationBulkData.schema()
 
-    assert helpers.remove_description(client_schema) == helpers.remove_description(
-        server_schema
-    )
+    assert helpers.are_compatible_api_schemas(client_schema, server_schema)
 
 
 def test_query_schema(helpers):
     client_schema = TextClassificationQuery.schema()
     server_schema = ServerTextClassificationQuery.schema()
 
-    assert helpers.remove_description(client_schema) == helpers.remove_description(
-        server_schema
-    )
+    assert helpers.are_compatible_api_schemas(client_schema, server_schema)
 
 
 def test_labeling_rule_schema(helpers):

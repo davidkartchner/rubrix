@@ -12,20 +12,20 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import pytest
 
-from rubrix.server.commons.errors import EntityNotFoundError, WrongTaskError
-from rubrix.server.tasks.commons.metrics import CommonTasksMetrics
-from rubrix.server.tasks.text2text import Text2TextBulkData, Text2TextRecord
-from rubrix.server.tasks.text_classification import (
-    TextClassificationBulkData,
+from rubrix.server.apis.v0.models.text2text import Text2TextBulkRequest, Text2TextRecord
+from rubrix.server.apis.v0.models.text_classification import (
+    TextClassificationBulkRequest,
     TextClassificationRecord,
 )
-from rubrix.server.tasks.token_classification import (
-    TokenClassificationBulkData,
+from rubrix.server.apis.v0.models.token_classification import (
+    TokenClassificationBulkRequest,
     TokenClassificationRecord,
 )
-from rubrix.server.tasks.token_classification.metrics import TokenClassificationMetrics
+from rubrix.server.services.metrics.models import CommonTasksMetrics
+from rubrix.server.services.tasks.token_classification.metrics import (
+    TokenClassificationMetrics,
+)
 
 COMMON_METRICS_LENGTH = len(CommonTasksMetrics.metrics)
 
@@ -41,7 +41,7 @@ def test_wrong_dataset_metrics(mocked_client):
             {"text": text},
         ]
     ]
-    request = Text2TextBulkData(records=records)
+    request = Text2TextBulkRequest(records=records)
     dataset = "test_wrong_dataset_metrics"
 
     assert mocked_client.delete(f"/api/datasets/{dataset}").status_code == 200
@@ -91,7 +91,7 @@ def test_dataset_for_text2text(mocked_client):
             {"text": text},
         ]
     ]
-    request = Text2TextBulkData(records=records)
+    request = Text2TextBulkRequest(records=records)
     dataset = "test_dataset_for_text2text"
 
     assert mocked_client.delete(f"/api/datasets/{dataset}").status_code == 200
@@ -121,7 +121,7 @@ def test_dataset_for_token_classification(mocked_client):
         ]
     ]
 
-    request = TokenClassificationBulkData(records=records)
+    request = TokenClassificationBulkRequest(records=records)
     dataset = "test_dataset_for_token_classification"
 
     assert mocked_client.delete(f"/api/datasets/{dataset}").status_code == 200
@@ -146,7 +146,7 @@ def test_dataset_for_token_classification(mocked_client):
             json={},
         )
 
-        assert response.status_code == 200, response.json()
+        assert response.status_code == 200, f"{metric} :: {response.json()}"
         summary = response.json()
 
         if not ("predicted" in metric_id or "annotated" in metric_id):
@@ -171,7 +171,7 @@ def test_dataset_metrics(mocked_client):
             },
         ]
     ]
-    request = TextClassificationBulkData(records=records)
+    request = TextClassificationBulkRequest(records=records)
     dataset = "test_get_dataset_metrics"
 
     assert mocked_client.delete(f"/api/datasets/{dataset}").status_code == 200
@@ -199,7 +199,7 @@ def test_dataset_metrics(mocked_client):
     assert response.json() == {
         "detail": {
             "code": "rubrix.api.errors::EntityNotFoundError",
-            "params": {"name": "missing_metric", "type": "BaseMetric"},
+            "params": {"name": "missing_metric", "type": "ServiceBaseMetric"},
         }
     }
 
@@ -242,7 +242,7 @@ def test_dataset_labels_for_text_classification(mocked_client):
             },
         ]
     ]
-    request = TextClassificationBulkData(records=records)
+    request = TextClassificationBulkRequest(records=records)
     dataset = "test_dataset_labels_for_text_classification"
 
     assert mocked_client.delete(f"/api/datasets/{dataset}").status_code == 200

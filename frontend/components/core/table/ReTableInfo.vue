@@ -39,8 +39,8 @@
                 :class="[sortOrder, { active: sortedBy === column.field }]"
                 @click="sort(column)"
               >
-                {{ column.name }}
-                <svgicon color="#4C4EA3" width="15" height="15" name="sort" />
+                <svgicon width="18" height="18" color="#4C4EA3" name="sort" />
+                <span>{{ column.name }}</span>
               </button>
             </div>
           </div>
@@ -65,7 +65,13 @@
               :key="String(item.id)"
             >
               <div class="table-info__item">
-                <!-- <ReCheckbox v-if="globalActions" v-model="item.selectedRecord" class="list__item__checkbox" :value="item.name" @change="onCheckboxChanged($event, item.id, key)" /> -->
+                <re-checkbox
+                  v-if="globalActions"
+                  v-model="item.selectedRecord"
+                  class="list__item__checkbox"
+                  :value="item.name"
+                  @change="onCheckboxChanged($event, item.id)"
+                />
                 <span
                   v-for="(column, idx) in columns"
                   :key="idx"
@@ -89,7 +95,7 @@
                           class="table-info__actions__button button-icon"
                           @click.prevent="onActionClicked('copy-name', item)"
                         >
-                          <svgicon name="copy" width="12" height="13" />
+                          <svgicon name="copy" width="16" height="16" />
                         </ReButton>
                       </re-action-tooltip>
                     </span>
@@ -133,11 +139,6 @@
                     <!-- TODO: remove references to task -->
                     <span v-else-if="column.type === 'task'">
                       {{ itemValue(item, column) }}
-                      <span
-                        v-if="itemValue(item, column) === 'Text2Text'"
-                        class="table-info__tag"
-                        >Experimental</span
-                      >
                     </span>
                     <span v-else>{{ itemValue(item, column) }}</span>
                   </span>
@@ -156,8 +157,8 @@
                       <svgicon
                         v-if="action.icon !== undefined"
                         :name="action.icon"
-                        width="12"
-                        height="13"
+                        width="16"
+                        height="16"
                       />
                     </ReButton>
                   </re-action-tooltip>
@@ -192,26 +193,6 @@
               </div>
             </li>
           </ul>
-          <!-- <ReModal :modal-custom="true" :prevent-body-scroll="true" modal-class="modal-primary" :modal-visible="visibleModalId === 'all'" modal-position="modal-center" @close-modal="$emit('close-modal')">
-            <div>
-              <p class="modal__title">Delete confirmation</p>
-              <span>
-                You are about to delete: <br />
-                <span v-for="item in selectedItems" :key="item.id">
-                  <strong>{{ item.actionName }}</strong><br /></span>
-              </span>
-              <p>This process cannot be undone</p>
-              <br />
-              <div class="modal-buttons">
-                <ReButton class="button-tertiary--small button-tertiary--outline" @click="$emit('close-modal')">
-                  Cancel
-                </ReButton>
-                <ReButton class="button-primary--small" @click="$emit('delete-multiple')">
-                  Yes, delete
-                </ReButton>
-              </div>
-            </div>
-          </ReModal> -->
         </div>
       </template>
       <ResultsEmpty v-else :title="emptySearchInfo.title" />
@@ -220,11 +201,10 @@
 </template>
 
 <script>
-import "assets/icons/delete";
+import "assets/icons/trash-empty";
 import "assets/icons/refresh";
 import "assets/icons/copy";
-import "assets/icons/copy-url";
-import "assets/icons/datasource";
+import "assets/icons/link";
 import "assets/icons/sort";
 export default {
   props: {
@@ -328,7 +308,13 @@ export default {
       const matchFilters = (item) => {
         if (Object.values(this.filters).length) {
           return Object.keys(this.filters).every((key) => {
-            return this.filters[key].toString().includes(item[key]);
+            if (this.isObject(item[key])) {
+              return this.filters[key].find(
+                (filter) => filter.value === item[key][filter.key]
+              );
+            } else {
+              return this.filters[key].toString().includes(item[key]);
+            }
           });
         }
         return true;
@@ -359,6 +345,9 @@ export default {
     this.sortedBy = this.sortedByField;
   },
   methods: {
+    isObject(obj) {
+      return Object.prototype.toString.call(obj) === "[object Object]";
+    },
     itemValue(item, column) {
       if (column.subfield) {
         return item[column.field][column.subfield];
@@ -482,8 +471,17 @@ export default {
       color: $font-secondary;
       @include font-size(14px);
       font-family: $sff;
-      .svg-icon {
-        margin-left: 0.5em;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      @include media("<=desktop") {
+        display: block;
+        .svg-icon {
+          display: block;
+        }
+      }
+      span {
+        white-space: nowrap;
       }
     }
   }
@@ -491,11 +489,12 @@ export default {
     overflow: auto;
     height: calc(100vh - 203px);
     padding-bottom: 0.5em;
+    @extend %hide-scrollbar;
   }
   &__item {
     position: relative;
     list-style: none;
-    padding: 2em 8em 2em 2em;
+    padding: 2em 5em 2em 2em;
     display: flex;
     width: 100%;
     border-bottom: 1px solid $line-light-color;
@@ -504,19 +503,23 @@ export default {
     outline: none;
     &__col {
       text-align: left;
-      margin-right: 1.5em;
+      margin-right: 1em;
       flex: 1 1 0px;
       &:nth-last-of-type(-n + 1) {
         max-width: 120px;
       }
       &:first-child {
-        flex-shrink: 0;
-        min-width: 240px;
+        width: auto;
+        min-width: auto;
+        flex-grow: 1.5;
       }
     }
     .svg-icon {
-      margin-right: 1em;
+      margin-right: 8px;
       fill: $font-medium-color;
+      &:hover {
+        fill: darken($font-medium-color, 10%);
+      }
     }
   }
   &__tag {
@@ -541,7 +544,6 @@ export default {
       margin-left: 2em;
       padding: 0 !important;
       .svg-icon {
-        fill: palette(grey, dark);
         margin-right: 0;
       }
       & + #{$this} {
@@ -552,27 +554,18 @@ export default {
   &__title {
     display: block;
     @include font-size(15px);
+    hyphens: auto;
     word-break: break-word;
-    span {
-      display: flex;
-      align-items: center;
-    }
     .button-icon {
       margin-left: 5px;
       padding: 0;
       margin-bottom: 2px;
-      .svg-icon {
-        fill: $font-medium-color;
-      }
     }
     a {
       text-decoration: none;
       &:hover {
         color: $primary-color;
       }
-    }
-    .svg-icon {
-      max-width: 13px;
     }
   }
   &__group {
@@ -595,13 +588,16 @@ export default {
     display: inline-block;
     max-width: 280px;
     font-weight: 600;
+    hyphens: auto;
     word-break: break-word;
   }
   .array {
     p {
       margin-top: 0;
       margin-bottom: 0;
-      display: block;
+      display: inline;
+      hyphens: auto;
+      word-break: break-word;
     }
   }
   .text {
@@ -613,7 +609,8 @@ export default {
       border-radius: 10px;
       margin-right: 0.5em;
       margin-top: 0;
-      word-break: break-all;
+      hyphens: auto;
+      word-break: break-word;
       &:last-child {
         margin-bottom: 0;
       }

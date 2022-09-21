@@ -1,7 +1,24 @@
+#  Copyright 2021-present, the Recognai S.L. team.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 import pytest
 
 import rubrix
 from rubrix import TokenClassificationRecord
+from rubrix.client import api
+from rubrix.client.sdk.commons.errors import NotFoundApiError
+from rubrix.metrics import __all__ as ALL_METRICS
 
 
 def test_log_with_empty_text(mocked_client):
@@ -9,7 +26,9 @@ def test_log_with_empty_text(mocked_client):
     text = " "
 
     rubrix.delete(dataset)
-    with pytest.raises(Exception, match="No text or empty text provided"):
+    with pytest.raises(
+        Exception, match="The provided `text` contains only whitespaces."
+    ):
         rubrix.log(
             TokenClassificationRecord(id=0, text=text, tokens=["a", "b", "c"]),
             name=dataset,
@@ -29,6 +48,16 @@ def test_log_with_empty_tokens_list(mocked_client):
             TokenClassificationRecord(id=0, text=text, tokens=[]),
             name=dataset,
         )
+
+
+def test_call_metrics_with_no_api_client_initialized(mocked_client):
+
+    for metric in ALL_METRICS:
+
+        api.__ACTIVE_API__ = None
+
+        with pytest.raises(NotFoundApiError):
+            metric("not_found")
 
 
 def test_log_record_that_makes_me_cry(mocked_client):
@@ -81,7 +110,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
     rubrix.delete(dataset)
     rubrix.log(record, name=dataset)
 
-    records = rubrix.load(dataset, as_pandas=False)
+    records = rubrix.load(dataset)
     assert len(records) == 1
     assert records[0].text == record.text
     assert records[0].tokens == record.tokens
@@ -94,7 +123,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                     "chars_length": 6,
                     "density": 0.03225806451612903,
                     "label": "ENG",
-                    "score": 1.0,
+                    "score": 0.0,
                     "tokens_length": 1,
                     "value": "access",
                 }
@@ -136,7 +165,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
         "text_length": 137,
         "tokens": [
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 0,
                 "char_start": 0,
                 "custom": None,
@@ -169,7 +198,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                 "value": "Story",
             },
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 14,
                 "char_start": 14,
                 "custom": None,
@@ -202,7 +231,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                 "value": "hora",
             },
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 27,
                 "char_start": 27,
                 "custom": None,
@@ -257,7 +286,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                 "value": "pobre",
             },
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 52,
                 "char_start": 49,
                 "custom": None,
@@ -323,7 +352,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                 "value": "Telecinco",
             },
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 80,
                 "char_start": 79,
                 "custom": None,
@@ -334,7 +363,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                 "value": "..",
             },
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 82,
                 "char_start": 82,
                 "custom": None,
@@ -411,7 +440,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                 "value": "LUNES",
             },
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 120,
                 "char_start": 120,
                 "custom": None,
@@ -444,7 +473,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                 "value": "CADENAS",
             },
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 132,
                 "char_start": 132,
                 "custom": None,
@@ -455,7 +484,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                 "value": ")",
             },
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 133,
                 "char_start": 133,
                 "custom": None,
@@ -466,7 +495,7 @@ def test_log_record_that_makes_me_cry(mocked_client):
                 "value": ".",
             },
             {
-                "capitalness": "UPPER",
+                "capitalness": None,
                 "char_end": 135,
                 "char_start": 135,
                 "custom": None,
@@ -492,6 +521,7 @@ def test_search_keywords(mocked_client):
     rubrix.log(name=dataset, records=dataset_rb)
 
     df = rubrix.load(dataset, query="lis*")
+    df = df.to_pandas()
     assert not df.empty
     assert "search_keywords" in df.columns
     top_keywords = set(

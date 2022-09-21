@@ -1,7 +1,21 @@
+#  Copyright 2021-present, the Recognai S.L. team.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 import pytest
 from pydantic import ValidationError
 
-from rubrix.server.commons.errors import EntityNotFoundError
+from rubrix.server.errors import EntityNotFoundError
 from rubrix.server.security.model import User
 
 
@@ -19,9 +33,14 @@ def test_email_validator(wrong_email):
         User(username="user", email=wrong_email)
 
 
-@pytest.mark.parametrize("wrong_name", ["user name", "user/name", "user.name"])
+@pytest.mark.parametrize(
+    "wrong_name", ["user name", "user/name", "user.name", "UserName", "userName"]
+)
 def test_username_validator(wrong_name):
-    with pytest.raises(ValidationError):
+    with pytest.raises(
+        ValidationError,
+        match=f"Wrong username. The username {wrong_name} does not match the pattern",
+    ):
         User(username=wrong_name)
 
 

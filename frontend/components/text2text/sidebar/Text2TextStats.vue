@@ -77,19 +77,11 @@ export default {
 };
 </script>
 <style lang="scss" scoped>
-.sidebar {
-  &__title {
-    color: $font-secondary-dark;
-    margin-top: 0.5em;
-    @include font-size(20px);
-    font-weight: 700;
-  }
-}
 label {
   display: block;
   width: calc(100% - 40px);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
+  hyphens: auto;
 }
 .labels {
   margin-top: 3em;
@@ -105,10 +97,11 @@ label {
   color: $font-secondary-dark;
 }
 .scroll {
-  max-height: calc(100vh - 400px);
+  max-height: calc(100vh - 200px);
   padding-right: 1em;
   margin-right: -1em;
   overflow: auto;
+  @extend %hide-scrollbar;
 }
 .records-number {
   margin-right: 0;

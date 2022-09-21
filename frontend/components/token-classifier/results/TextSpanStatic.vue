@@ -19,7 +19,10 @@
   <span class="span__text">
     <EntityHighlight
       v-if="token.entity"
-      :class="['color_' + tag_color]"
+      :class="[
+        'color_' + (tag_color % this.$entitiesMaxColors),
+        matchQueryClass,
+      ]"
       :span="token"
       :dataset="dataset"
       :record="record"
@@ -50,6 +53,17 @@ export default {
         (entity) => entity.text === this.token.entity.label
       )[0].colorId;
     },
+    queryScore() {
+      return this.dataset.query.score;
+    },
+    matchQueryClass() {
+      if (this.queryScore) {
+        const score = this.token.entity.score;
+        return score >= this.queryScore.from && score <= this.queryScore.to
+          ? undefined
+          : "excluded";
+      }
+    },
   },
 };
 </script>
@@ -78,6 +92,7 @@ export default {
       margin: 0;
       overscroll-behavior: contain;
       position: relative;
+      @extend %hide-scrollbar;
     }
     &__option {
       display: flex;
@@ -170,12 +185,28 @@ $hue: 360;
     &.prediction ::v-deep .highlight__content {
       padding-bottom: 3px;
       border-bottom: 5px solid $rcolor;
+      position: relative;
+      &:after {
+        content: "";
+        border-top: 1px solid darken($rcolor, 50%);
+        position: absolute;
+        top: 26px;
+        left: 0;
+        right: 0;
+      }
     }
     &.annotation ::v-deep .highlight__tooltip:after {
       border-color: $rcolor transparent transparent transparent;
     }
     &.prediction ::v-deep .highlight__tooltip:after {
       border-color: transparent transparent $rcolor transparent;
+    }
+    &.excluded ::v-deep {
+      .highlight__content {
+        &:after {
+          content: none;
+        }
+      }
     }
     &.active,
     &.tag:hover {

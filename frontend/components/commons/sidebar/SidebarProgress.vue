@@ -95,21 +95,13 @@ export default {
 };
 </script>
 <style lang="scss" scoped>
-.sidebar {
-  &__title {
-    color: $font-secondary-dark;
-    margin-top: 0.5em;
-    @include font-size(20px);
-    font-weight: 700;
-  }
-}
 label {
   margin-top: 1.2em;
   margin-bottom: 0.5em;
   display: block;
   width: calc(100% - 40px);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  hyphens: auto;
+  word-break: break-word;
 }
 .total {
   font-weight: 600;
@@ -135,10 +127,11 @@ label {
   }
 }
 .scroll {
-  max-height: calc(100vh - 480px);
+  max-height: calc(100vh - 300px);
   padding-right: 1em;
   margin-right: -1em;
   overflow: auto;
+  @extend %hide-scrollbar;
 }
 .records-number {
   margin-right: 0;

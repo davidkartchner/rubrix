@@ -25,7 +25,7 @@
     >
       <slot />
     </label>
-    <div class="checkbox-container" tabindex="0" @click.stop="toggleCheck">
+    <div class="checkbox-container" tabindex="0" @click="toggleCheck">
       <input
         :id="id"
         type="checkbox"
@@ -33,13 +33,14 @@
         :value="value"
         :checked="checked"
       />
-      <svgicon color="#fffff" width="12" name="check2" />
+      <svgicon color="#fffff" width="12" name="check" />
     </div>
   </div>
 </template>
 
 <script>
-import "assets/icons/check2";
+import "assets/icons/check";
+import _ from "lodash";
 export default {
   model: {
     prop: "areChecked",
@@ -55,7 +56,9 @@ export default {
     classes() {
       return {
         checked: Array.isArray(this.areChecked)
-          ? this.areChecked.includes(this.value)
+          ? Array.isArray(this.areChecked)
+            ? this.areChecked.includes(this.value)
+            : _.find(this.areChecked, this.value)
           : this.checked,
         disabled: this.disabled,
       };
@@ -76,7 +79,10 @@ export default {
       if (!this.disabled) {
         if (Array.isArray(this.areChecked)) {
           const checked = this.areChecked.slice();
-          const found = checked.indexOf(this.value);
+          const found =
+            typeof this.value === "string"
+              ? checked.indexOf(this.value)
+              : _.findIndex(checked, this.value);
           if (found !== -1) {
             checked.splice(found, 1);
           } else {
@@ -125,6 +131,8 @@ $checkbox-color-dark: $primary-color;
     text-align: center;
     vertical-align: middle;
     text-align: center;
+    margin-right: 0;
+    margin-left: auto;
     .svg-icon {
       fill: $lighter-color;
       transform: scale(0);
@@ -142,9 +150,10 @@ $checkbox-color-dark: $primary-color;
     }
   }
   .checkbox-label {
-    height: $checkbox-size;
     line-height: $checkbox-size;
-    margin-right: auto;
+    margin-right: 0.5em;
+    word-break: break-word;
+    hyphens: auto;
   }
   &--dark {
     &.checked {
@@ -164,9 +173,10 @@ $checkbox-color-dark: $primary-color;
 .checkbox-label {
   .dropdown--filter & {
     height: auto;
-    padding-right: 2em;
     white-space: normal;
     text-transform: none;
+    word-break: break-word;
+    hyphens: auto;
   }
 }
 

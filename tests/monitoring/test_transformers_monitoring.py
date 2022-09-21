@@ -1,3 +1,17 @@
+#  Copyright 2021-present, the Recognai S.L. team.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 from typing import List, Union
 
 import pytest
@@ -15,7 +29,8 @@ def test_classifier_monitoring_with_all_scores(
     expected_text = "This is a text, yeah"
     classifier_monitor_all_scores(expected_text)
 
-    df = rubrix.load(classifier_dataset)
+    ds = rubrix.load(classifier_dataset)
+    df = ds.to_pandas()
     assert len(df) == 1
     record = TextClassificationRecord.parse_obj(df.to_dict(orient="records")[0])
     assert record.inputs == {"text": expected_text}
@@ -28,7 +43,8 @@ def test_classifier_monitoring(mocked_client, classifier_monitor, classifier_dat
     expected_text = "This is a text, yeah"
     classifier_monitor(expected_text)
 
-    df = rubrix.load(classifier_dataset)
+    ds = rubrix.load(classifier_dataset)
+    df = ds.to_pandas()
     assert len(df) == 1
     record = TextClassificationRecord.parse_obj(df.to_dict(orient="records")[0])
     assert record.inputs == {"text": expected_text}
@@ -37,13 +53,15 @@ def test_classifier_monitoring(mocked_client, classifier_monitor, classifier_dat
     rubrix.delete(classifier_dataset)
     texts = ["This is a text", "And another text here"]
     classifier_monitor(texts)
-    df = rubrix.load(classifier_dataset)
+    ds = rubrix.load(classifier_dataset)
+    df = ds.to_pandas()
     assert len(df) == 2
     assert set([r["text"] for r in df.inputs.values.tolist()]) == set(texts)
 
     rubrix.delete(classifier_dataset)
     classifier_monitor(expected_text, metadata={"some": "metadata"})
-    df = rubrix.load(classifier_dataset)
+    ds = rubrix.load(classifier_dataset)
+    df = ds.to_pandas()
     assert len(df) == 1
     assert df.metadata.values.tolist()[0] == {"some": "metadata"}
 
@@ -150,7 +168,8 @@ def check_zero_shot_results(
     except KeyError:
         pass
 
-    df = rubrix.load(dataset)
+    ds = rubrix.load(dataset)
+    df = ds.to_pandas()
     assert len(df) == 1
     record = TextClassificationRecord.parse_obj(df.to_dict(orient="records")[0])
     assert record.inputs["text"] == text
@@ -271,7 +290,8 @@ def test_monitor_zero_shot_passing_metadata(
         metadata=expected_metadata,
     )
 
-    df = rubrix.load(dataset)
+    ds = rubrix.load(dataset)
+    df = ds.to_pandas()
     assert len(df) == 1
 
     record = TextClassificationRecord.parse_obj(df.to_dict(orient="records")[0])

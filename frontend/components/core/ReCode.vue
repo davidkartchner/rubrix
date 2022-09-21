@@ -5,7 +5,7 @@
     </pre>
     <re-action-tooltip class="code__button" tooltip="Copied">
       <a class="breadcrumbs__copy" href="#" @click.prevent="copy(code)">
-        <svgicon name="copy" width="12" height="13" />
+        <svgicon name="copy" width="16" height="16" />
       </a>
     </re-action-tooltip>
   </div>
@@ -22,12 +22,7 @@ export default {
   },
   methods: {
     copy(code) {
-      const myTemporaryInputElement = document.createElement("textarea");
-      myTemporaryInputElement.className = "hidden-input";
-      myTemporaryInputElement.value = code;
-      document.body.appendChild(myTemporaryInputElement);
-      myTemporaryInputElement.select();
-      document.execCommand("Copy");
+      this.$copyToClipboard(code);
     },
   },
 };

@@ -28,10 +28,10 @@ from rubrix.client.sdk.token_classification.models import (
 from rubrix.client.sdk.token_classification.models import (
     TokenClassificationRecord as SdkTokenClassificationRecord,
 )
-from rubrix.server.tasks.token_classification.api.model import (
-    TokenClassificationBulkData as ServerTokenClassificationBulkData,
+from rubrix.server.apis.v0.models.token_classification import (
+    TokenClassificationBulkRequest as ServerTokenClassificationBulkData,
 )
-from rubrix.server.tasks.token_classification.api.model import (
+from rubrix.server.apis.v0.models.token_classification import (
     TokenClassificationQuery as ServerTokenClassificationQuery,
 )
 
@@ -40,22 +40,23 @@ def test_bulk_data_schema(helpers):
     client_schema = TokenClassificationBulkData.schema()
     server_schema = ServerTokenClassificationBulkData.schema()
 
-    assert helpers.remove_description(client_schema) == helpers.remove_description(
-        server_schema
-    )
+    assert helpers.are_compatible_api_schemas(client_schema, server_schema)
 
 
 def test_query_schema(helpers):
     client_schema = TokenClassificationQuery.schema()
     server_schema = ServerTokenClassificationQuery.schema()
 
-    assert helpers.remove_description(client_schema) == helpers.remove_description(
-        server_schema
-    )
+    assert helpers.are_compatible_api_schemas(client_schema, server_schema)
 
 
 @pytest.mark.parametrize(
-    "prediction,expected", [([("label", 0, 4)], 1.0), ([("label", 0, 4, 0.5)], 0.5)]
+    "prediction,expected",
+    [
+        ([("label", 0, 4)], 0.0),
+        ([("label", 0, 4, None)], 0.0),
+        ([("label", 0, 4, 0.5)], 0.5),
+    ],
 )
 def test_from_client_prediction(prediction, expected):
     record = TokenClassificationRecord(

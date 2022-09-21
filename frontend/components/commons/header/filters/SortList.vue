@@ -17,15 +17,17 @@
 
 <template>
   <div>
-    <SortFilter
-      v-for="index in numberOfSortFields"
-      :key="index"
-      class="sort"
-      :selected-field="selectedFields[index - 1]"
-      :sort-options="filteredSortOptions"
-      @removeSortField="onRemoveSortField(index)"
-      @addSortField="onAddSortField(index, ...arguments)"
-    />
+    <div class="filters--scrollable">
+      <SortFilter
+        v-for="index in numberOfSortFields"
+        :key="index"
+        class="sort"
+        :selected-field="selectedFields[index - 1]"
+        :sort-options="filteredSortOptions"
+        @removeSortField="onRemoveSortField(index)"
+        @addSortField="onAddSortField(index, ...arguments)"
+      />
+    </div>
     <a
       v-if="selectedFields.length === numberOfSortFields"
       class="sort__add-button"
@@ -63,7 +65,17 @@ export default {
   },
   computed: {
     filteredSortOptions() {
-      return this.sortOptions.filter(
+      const formatOptions = this.sortOptions.map((opt) => {
+        if (opt.group.toLowerCase() === "metadata") {
+          return {
+            ...opt,
+            id: `metadata.${opt.name}`,
+            name: `Metadata.${opt.name}`,
+          };
+        }
+        return opt;
+      });
+      return formatOptions.filter(
         (opt) =>
           !this.selectedFields.some((field) => opt.id.toString() === field.id)
       );
@@ -111,7 +123,7 @@ export default {
 
 <style lang="scss" scoped>
 .sort {
-  margin-bottom: 0.5em;
+  margin-bottom: 1em;
   &__buttons {
     display: flex;
     margin-top: 1.5em;

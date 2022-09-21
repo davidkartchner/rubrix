@@ -22,7 +22,10 @@
         <div v-if="counter > 0" class="info">
           <label
             :class="[
-              `color_${entities.filter((e) => e.text === label)[0].colorId}`,
+              `color_${
+                entities.filter((e) => e.text === label)[0].colorId %
+                $entitiesMaxColors
+              }`,
               'entity',
             ]"
             >{{ label }}</label
@@ -66,7 +69,9 @@ export default {
   margin-bottom: 0.7em;
   font-weight: 600;
   label {
-    margin: 0; // for tagger
+    margin: 0;
+    word-break: break-word;
+    hyphens: auto;
     &[class^="color_"] {
       padding: 0.3em;
     }

@@ -12,14 +12,16 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import asyncio
 import logging
 import os
 import re
+import warnings
+from asyncio import Future
 from functools import wraps
 from inspect import signature
-from typing import Any, Callable, Dict, Iterable, List, Optional, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
-import pandas
 from tqdm.auto import tqdm
 
 from rubrix._constants import (
@@ -27,6 +29,9 @@ from rubrix._constants import (
     DEFAULT_API_KEY,
     RUBRIX_WORKSPACE_HEADER_NAME,
 )
+from rubrix.client.apis.datasets import Datasets
+from rubrix.client.apis.metrics import MetricsAPI
+from rubrix.client.apis.searches import Searches
 from rubrix.client.datasets import (
     Dataset,
     DatasetForText2Text,
@@ -42,8 +47,8 @@ from rubrix.client.models import (
     TokenClassificationRecord,
 )
 from rubrix.client.sdk.client import AuthenticatedClient
+from rubrix.client.sdk.commons.api import async_bulk
 from rubrix.client.sdk.commons.errors import RubrixClientError
-from rubrix.client.sdk.commons.models import Response
 from rubrix.client.sdk.datasets import api as datasets_api
 from rubrix.client.sdk.datasets.models import CopyDatasetRequest, TaskType
 from rubrix.client.sdk.metrics import api as metrics_api
@@ -68,17 +73,40 @@ from rubrix.client.sdk.token_classification.models import (
     TokenClassificationBulkData,
     TokenClassificationQuery,
 )
-from rubrix.client.sdk.users.api import whoami
+from rubrix.client.sdk.users import api as users_api
 from rubrix.client.sdk.users.models import User
+from rubrix.utils import setup_loop_in_thread
 
 _LOGGER = logging.getLogger(__name__)
-_WARNED_ABOUT_AS_PANDAS = False
 
-# Larger sizes will trigger a warning
-_MAX_CHUNK_SIZE = 5000
+
+class _RubrixLogAgent:
+    def __init__(self, api: "Api"):
+        self.__api__ = api
+        self.__loop__, self.__thread__ = setup_loop_in_thread()
+
+    @staticmethod
+    async def __log_internal__(api: "Api", *args, **kwargs):
+
+        try:
+            return await api.log_async(*args, **kwargs)
+        except Exception as ex:
+            _LOGGER.error(
+                f"Cannot log data {args, kwargs}\n"
+                f"Error of type {type(ex)}\n: {ex}. ({ex.args})"
+            )
+            raise ex
+
+    def log(self, *args, **kwargs) -> Future:
+        return asyncio.run_coroutine_threadsafe(
+            self.__log_internal__(self.__api__, *args, **kwargs), self.__loop__
+        )
 
 
 class Api:
+    # Larger sizes will trigger a warning
+    _MAX_CHUNK_SIZE = 5000
+
     def __init__(
         self,
         api_url: Optional[str] = None,
@@ -113,10 +141,35 @@ class Api:
         self._client: AuthenticatedClient = AuthenticatedClient(
             base_url=api_url, token=api_key, timeout=timeout
         )
-        self._user: User = whoami(client=self._client)
+        self._user: User = users_api.whoami(client=self._client)
 
         if workspace is not None:
             self.set_workspace(workspace)
+
+        self._agent = _RubrixLogAgent(self)
+
+    def __del__(self):
+        if hasattr(self, "_client"):
+            del self._client
+        if hasattr(self, "_agent"):
+            del self._agent
+
+    @property
+    def client(self):
+        """The underlying authenticated client"""
+        return self._client
+
+    @property
+    def datasets(self) -> Datasets:
+        return Datasets(client=self._client)
+
+    @property
+    def searches(self):
+        return Searches(client=self._client)
+
+    @property
+    def metrics(self):
+        return MetricsAPI(client=self.client)
 
     def set_workspace(self, workspace: str):
         """Sets the active workspace.
@@ -160,14 +213,11 @@ class Api:
             >>> rb.copy("my_dataset", name_of_copy="new_dataset")
             >>> rb.load("new_dataset")
         """
-        response = datasets_api.copy_dataset(
+        datasets_api.copy_dataset(
             client=self._client,
             name=dataset,
             json_body=CopyDatasetRequest(name=name_of_copy, target_workspace=workspace),
         )
-
-        if response.status_code == 409:
-            raise RuntimeError(f"A dataset with name '{name_of_copy}' already exists.")
 
     def delete(self, name: str) -> None:
         """Deletes a dataset.
@@ -179,8 +229,7 @@ class Api:
             >>> import rubrix as rb
             >>> rb.delete(name="example-dataset")
         """
-        response = datasets_api.delete_dataset(client=self._client, name=name)
-        self.check_response_errors(response)
+        datasets_api.delete_dataset(client=self._client, name=name)
 
     def log(
         self,
@@ -190,8 +239,66 @@ class Api:
         metadata: Optional[Dict[str, Any]] = None,
         chunk_size: int = 500,
         verbose: bool = True,
-    ) -> BulkResponse:
+        background: bool = False,
+    ) -> Union[BulkResponse, Future]:
         """Logs Records to Rubrix.
+
+        The logging happens asynchronously in a background thread.
+
+        Args:
+            records: The record, an iterable of records, or a dataset to log.
+            name: The dataset name.
+            tags: A dictionary of tags related to the dataset.
+            metadata: A dictionary of extra info for the dataset.
+            chunk_size: The chunk size for a data bulk.
+            verbose: If True, shows a progress bar and prints out a quick summary at the end.
+            background: If True, we will NOT wait for the logging process to finish and return an ``asyncio.Future``
+                object. You probably want to set ``verbose`` to False in that case.
+
+        Returns:
+            Summary of the response from the REST API.
+            If the ``background`` argument is set to True, an ``asyncio.Future`` will be returned instead.
+
+        Examples:
+            >>> import rubrix as rb
+            >>> record = rb.TextClassificationRecord(
+            ...     text="my first rubrix example",
+            ...     prediction=[('spam', 0.8), ('ham', 0.2)]
+            ... )
+            >>> rb.log(record, name="example-dataset")
+            1 records logged to http://localhost:6900/datasets/rubrix/example-dataset
+            BulkResponse(dataset='example-dataset', processed=1, failed=0)
+            >>>
+            >>> # Logging records in the background
+            >>> rb.log(record, name="example-dataset", background=True, verbose=False)
+            <Future at 0x7f675a1fffa0 state=pending>
+        """
+        future = self._agent.log(
+            records=records,
+            name=name,
+            tags=tags,
+            metadata=metadata,
+            chunk_size=chunk_size,
+            verbose=verbose,
+        )
+        if background:
+            return future
+
+        try:
+            return future.result()
+        finally:
+            future.cancel()
+
+    async def log_async(
+        self,
+        records: Union[Record, Iterable[Record], Dataset],
+        name: str,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        chunk_size: int = 500,
+        verbose: bool = True,
+    ) -> BulkResponse:
+        """Logs Records to Rubrix with asyncio.
 
         Args:
             records: The record, an iterable of records, or a dataset to log.
@@ -205,15 +312,18 @@ class Api:
             Summary of the response from the REST API
 
         Examples:
+            >>> # Log asynchronously from your notebook
+            >>> import asyncio
             >>> import rubrix as rb
-            >>> record = rb.TextClassificationRecord(
-            ...     text="my first rubrix example",
-            ...     prediction=[('spam', 0.8), ('ham', 0.2)]
+            >>> from rubrix.utils import setup_loop_in_thread
+            >>> loop, _ = setup_loop_in_thread()
+            >>> future_response = asyncio.run_coroutine_threadsafe(
+            ...     rb.log_async(my_records, dataset_name), loop
             ... )
-            >>> rb.log(record, name="example-dataset")
-            1 records logged to http://localhost:6900/datasets/rubrix/example-dataset
-            BulkResponse(dataset='example-dataset', processed=1, failed=0)
         """
+        tags = tags or {}
+        metadata = metadata or {}
+
         if not name:
             raise InputValueError("Empty dataset name has been passed as argument.")
 
@@ -223,65 +333,51 @@ class Api:
                 "Please, use a valid name for your dataset"
             )
 
+        if chunk_size > self._MAX_CHUNK_SIZE:
+            _LOGGER.warning(
+                """The introduced chunk size is noticeably large, timeout errors may occur.
+                Consider a chunk size smaller than %s""",
+                self._MAX_CHUNK_SIZE,
+            )
+
         if isinstance(records, Record.__args__):
             records = [records]
-        # this transforms a Dataset* to a list of *Record
         records = list(records)
-
-        tags = tags or {}
-        metadata = metadata or {}
 
         try:
             record_type = type(records[0])
         except IndexError:
             raise InputValueError("Empty record list has been passed as argument.")
 
-        if chunk_size > _MAX_CHUNK_SIZE:
-            _LOGGER.warning(
-                """The introduced chunk size is noticeably large, timeout errors may occur.
-                Consider a chunk size smaller than %s""",
-                _MAX_CHUNK_SIZE,
-            )
-
         if record_type is TextClassificationRecord:
             bulk_class = TextClassificationBulkData
-            bulk_records_function = text_classification_api.bulk
-            to_sdk_model = CreationTextClassificationRecord.from_client
-
+            creation_class = CreationTextClassificationRecord
         elif record_type is TokenClassificationRecord:
             bulk_class = TokenClassificationBulkData
-            bulk_records_function = token_classification_api.bulk
-            to_sdk_model = CreationTokenClassificationRecord.from_client
-
+            creation_class = CreationTokenClassificationRecord
         elif record_type is Text2TextRecord:
             bulk_class = Text2TextBulkData
-            bulk_records_function = text2text_api.bulk
-            to_sdk_model = CreationText2TextRecord.from_client
-
-        # Record type is not recognised
+            creation_class = CreationText2TextRecord
         else:
             raise InputValueError(
-                f"Unknown record type passed as argument for [{','.join(map(str, records[0:5]))}...] "
-                f"Available values are {Record.__args__}"
+                f"Unknown record type {record_type}. Available values are {Record.__args__}"
             )
 
-        processed = 0
-        failed = 0
+        processed, failed = 0, 0
         progress_bar = tqdm(total=len(records), disable=not verbose)
         for i in range(0, len(records), chunk_size):
             chunk = records[i : i + chunk_size]
 
-            response = bulk_records_function(
+            response = await async_bulk(
                 client=self._client,
                 name=name,
                 json_body=bulk_class(
                     tags=tags,
                     metadata=metadata,
-                    records=[to_sdk_model(r) for r in chunk],
+                    records=[creation_class.from_client(r) for r in chunk],
                 ),
             )
 
-            self.check_response_errors(response)
             processed += response.parsed.processed
             failed += response.parsed.failed
 
@@ -290,17 +386,71 @@ class Api:
 
         # TODO: improve logging policy in library
         if verbose:
+            _LOGGER.info(
+                f"Processed {processed} records in dataset {name}. Failed: {failed}"
+            )
             workspace = self.get_workspace()
             if (
                 not workspace
             ):  # Just for backward comp. with datasets with no workspaces
                 workspace = "-"
             print(
-                f"{processed} records logged to {self._client.base_url + '/datasets/' + workspace + '/' + name}"
+                f"{processed} records logged to {self._client.base_url}/datasets/{workspace}/{name}"
             )
 
         # Creating a composite BulkResponse with the total processed and failed
         return BulkResponse(dataset=name, processed=processed, failed=failed)
+
+    def delete_records(
+        self,
+        name: str,
+        query: Optional[str] = None,
+        ids: Optional[List[Union[str, int]]] = None,
+        discard_only: bool = False,
+        discard_when_forbidden: bool = True,
+    ) -> Tuple[int, int]:
+        """Delete records from a Rubrix dataset.
+
+        Parameters:
+        -----------
+            name:
+                The dataset name.
+            query:
+                An ElasticSearch query with the
+                `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
+            ids:
+                If provided, deletes dataset records with given ids.
+            discard_only:
+                If `True`, matched records won't be deleted. Instead, they will be marked
+                as `Discarded`
+            discard_when_forbidden:
+                Only super-user or dataset creator can delete records from a dataset.
+                So, running "hard" deletion for other users will raise an `ForbiddenApiError` error.
+                If this parameter is `True`, the client API will automatically try to mark as ``Discarded``
+                records instead. Default, `True`
+
+        Returns:
+        --------
+            The total of matched records and real number of processed errors. These numbers could not
+            be the same if some data conflicts are found during operations (some matched records change during
+            deletion).
+
+        Examples:
+            **Delete by id**:
+            >>> import rubrix as rb
+            >>> rb.delete_records(name="example-dataset", ids=[1,3,5])
+
+            **Discard records by query**:
+            >>> import rubrix as rb
+            >>> rb.delete_records(name="example-dataset", query="metadata.code=33", discard_only=True)
+        """
+        return self.datasets.delete_records(
+            name=name,
+            query=query,
+            ids=ids,
+            mark_as_discarded=discard_only,
+            discard_when_forbidden=discard_when_forbidden,
+        )
 
     def load(
         self,
@@ -308,28 +458,65 @@ class Api:
         query: Optional[str] = None,
         ids: Optional[List[Union[str, int]]] = None,
         limit: Optional[int] = None,
-        as_pandas: bool = True,
-    ) -> Union[pandas.DataFrame, Dataset]:
-        """Loads a dataset as a pandas DataFrame or a Dataset.
+        id_from: Optional[str] = None,
+        as_pandas=None,
+    ) -> Dataset:
+        """Loads a Rubrix dataset.
 
-        Args:
-            name: The dataset name.
-            query: An ElasticSearch query with the
-                `query string syntax <https://rubrix.readthedocs.io/en/stable/reference/webapp/search_records.html>`_
-            ids: If provided, load dataset records with given ids.
-            limit: The number of records to retrieve.
-            as_pandas: If True, return a pandas DataFrame. If False, return a Dataset.
+        Parameters:
+        -----------
+            name:
+                The dataset name.
+            query:
+                An ElasticSearch query with the
+                `query string syntax <https://rubrix.readthedocs.io/en/stable/guides/queries.html>`_
+            ids:
+                If provided, load dataset records with given ids.
+            limit:
+                The number of records to retrieve.
+
+            id_from:
+                If provided, starts gathering the records starting from that Record. As the Records returned with the
+                load method are sorted by ID, ´id_from´ can be used to load using batches.
+
+            as_pandas:
+                DEPRECATED! To get a pandas DataFrame do ``rb.load('my_dataset').to_pandas()``.
 
         Returns:
-            The dataset as a pandas Dataframe or a Dataset.
+        --------
+            A Rubrix dataset.
 
         Examples:
+            **Basic Loading**: load the samples sorted by their ID
             >>> import rubrix as rb
-            >>> dataframe = rb.load(name="example-dataset")
             >>> dataset = rb.load(name="example-dataset")
+
+            **Iterate over a large dataset:**
+                When dealing with a large dataset you might want to load it in batches to optimize memory consumption
+                and avoid network timeouts. To that end, a simple batch-iteration over the whole database can be done
+                employing the `from_id` parameter. This parameter will act as a delimiter, retrieving the N items after
+                the given id, where N is determined by the `limit` parameter. **NOTE** If
+                no `limit` is given the whole dataset after that ID will be retrieved.
+
+            >>> import rubrix as rb
+            >>> dataset_batch_1 = rb.load(name="example-dataset", limit=1000)
+            >>> dataset_batch_2 = rb.load(name="example-dataset", limit=1000, id_from=dataset_batch_1[-1].id)
+
         """
+        if as_pandas is False:
+            warnings.warn(
+                "The argument `as_pandas` is deprecated and will be removed in a future version. "
+                "Please adapt your code accordingly. ",
+                FutureWarning,
+            )
+        elif as_pandas is True:
+            raise ValueError(
+                "The argument `as_pandas` is deprecated and will be removed in a future version. "
+                "Please adapt your code accordingly. ",
+                "If you want a pandas DataFrame do `rb.load('my_dataset').to_pandas()`.",
+            )
+
         response = datasets_api.get_dataset(client=self._client, name=name)
-        self.check_response_errors(response)
         task = response.parsed.task
 
         task_config = {
@@ -362,9 +549,8 @@ class Api:
             name=name,
             request=request_class(ids=ids, query_text=query),
             limit=limit,
+            id_from=id_from,
         )
-
-        self.check_response_errors(response)
 
         records = [sdk_record.to_client() for sdk_record in response.parsed]
         try:
@@ -373,28 +559,13 @@ class Api:
         except TypeError:
             records_sorted_by_id = sorted(records, key=lambda x: str(x.id))
 
-        dataset = dataset_class(records_sorted_by_id)
-
-        global _WARNED_ABOUT_AS_PANDAS
-        if not _WARNED_ABOUT_AS_PANDAS:
-            _LOGGER.warning(
-                "The argument 'as_pandas' in `rb.load` will be deprecated in the future, and we will always return a `Dataset`. "
-                "To emulate the future behavior set `as_pandas=False`. To get a pandas DataFrame, call `Dataset.to_pandas()`"
-            )
-            _WARNED_ABOUT_AS_PANDAS = True
-
-        if as_pandas:
-            return dataset.to_pandas()
-        return dataset
+        return dataset_class(records_sorted_by_id)
 
     def dataset_metrics(self, name: str) -> List[MetricInfo]:
         response = datasets_api.get_dataset(self._client, name)
-        self.check_response_errors(response)
-
         response = metrics_api.get_dataset_metrics(
             self._client, name=name, task=response.parsed.task
         )
-        self.check_response_errors(response)
 
         return response.parsed
 
@@ -413,7 +584,6 @@ class Api:
         size: Optional[int] = None,
     ) -> MetricResults:
         response = datasets_api.get_dataset(self._client, name)
-        self.check_response_errors(response)
 
         metric_ = self.get_metric(name, metric=metric)
         assert metric_ is not None, f"Metric {metric} not found !!!"
@@ -427,14 +597,13 @@ class Api:
             interval=interval,
             size=size,
         )
-        self.check_response_errors(response)
+
         return MetricResults(**metric_.dict(), results=response.parsed)
 
     def fetch_dataset_labeling_rules(self, dataset: str) -> List[LabelingRule]:
         response = text_classification_api.fetch_dataset_labeling_rules(
             self._client, name=dataset
         )
-        self.check_response_errors(response)
 
         return [LabelingRule.parse_obj(data) for data in response.parsed]
 
@@ -444,57 +613,11 @@ class Api:
         response = text_classification_api.dataset_rule_metrics(
             self._client, name=dataset, query=rule.query, label=rule.label
         )
-        self.check_response_errors(response)
 
         return LabelingRuleMetricsSummary.parse_obj(response.parsed)
 
-    @staticmethod
-    def check_response_errors(response: Response) -> None:
-        """Checks response status codes and raise corresponding error if found"""
 
-        http_status = response.status_code
-        response_data = response.parsed
-
-        if http_status == 401:
-            raise Exception(
-                "Unauthorized error: invalid credentials. The API answered with a {} code: {}".format(
-                    http_status, response_data
-                )
-            )
-
-        elif http_status == 403:
-            raise Exception(
-                "Forbidden error: you have not been authorised to access this dataset. "
-                "The API answered with a {} code: {}".format(http_status, response_data)
-            )
-
-        elif http_status == 404:
-            raise Exception(
-                "Not found error. The API answered with a {} code: {}".format(
-                    http_status, response_data
-                )
-            )
-
-        elif http_status == 422:
-            raise Exception(
-                "Unprocessable entity error: Something is wrong in your records. "
-                "The API answered with a {} code: {}".format(http_status, response_data)
-            )
-
-        elif 400 <= http_status < 500:
-            raise Exception(
-                "Request error: API cannot answer. "
-                "The API answered with a {} code: {}".format(http_status, response_data)
-            )
-
-        elif http_status >= 500:
-            raise Exception(
-                "Connection error: API is not responding. "
-                "The API answered with a {} code: {}".format(http_status, response_data)
-            )
-
-
-ACTIVE_API: Optional[Api] = None
+__ACTIVE_API__: Optional[Api] = None
 
 
 def active_api() -> Api:
@@ -502,10 +625,10 @@ def active_api() -> Api:
 
     If Active API is None, initialize a default one.
     """
-    global ACTIVE_API
-    if ACTIVE_API is None:
-        ACTIVE_API = Api()
-    return ACTIVE_API
+    global __ACTIVE_API__
+    if __ACTIVE_API__ is None:
+        __ACTIVE_API__ = Api()
+    return __ACTIVE_API__
 
 
 def api_wrapper(api_method: Callable):
@@ -515,9 +638,17 @@ def api_wrapper(api_method: Callable):
     """
 
     def decorator(func):
-        @wraps(api_method)
-        def wrapped_func(*args, **kwargs):
-            return func(*args, **kwargs)
+        if asyncio.iscoroutinefunction(api_method):
+
+            @wraps(api_method)
+            async def wrapped_func(*args, **kwargs):
+                return await func(*args, **kwargs)
+
+        else:
+
+            @wraps(api_method)
+            def wrapped_func(*args, **kwargs):
+                return func(*args, **kwargs)
 
         sign = signature(api_method)
         wrapped_func.__signature__ = sign.replace(
@@ -530,8 +661,8 @@ def api_wrapper(api_method: Callable):
 
 @api_wrapper(Api.__init__)
 def init(*args, **kwargs):
-    global ACTIVE_API
-    ACTIVE_API = Api(*args, **kwargs)
+    global __ACTIVE_API__
+    __ACTIVE_API__ = Api(*args, **kwargs)
 
 
 @api_wrapper(Api.set_workspace)
@@ -559,9 +690,19 @@ def log(*args, **kwargs):
     return active_api().log(*args, **kwargs)
 
 
+@api_wrapper(Api.log_async)
+def log_async(*args, **kwargs):
+    return active_api().log_async(*args, **kwargs)
+
+
 @api_wrapper(Api.load)
 def load(*args, **kwargs):
     return active_api().load(*args, **kwargs)
+
+
+@api_wrapper(Api.delete_records)
+def delete_records(*args, **kwargs):
+    return active_api().delete_records(*args, **kwargs)
 
 
 class InputValueError(RubrixClientError):

@@ -1,11 +1,24 @@
+#  Copyright 2021-present, the Recognai S.L. team.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 import pytest
 
-from rubrix.server.tasks.text_classification import (
+from rubrix.server.apis.v0.models.text_classification import (
     CreateLabelingRule,
-    DatasetLabelingRulesMetricsSummary,
     LabelingRule,
     LabelingRuleMetricsSummary,
-    TextClassificationBulkData,
+    TextClassificationBulkRequest,
     TextClassificationRecord,
 )
 
@@ -32,7 +45,7 @@ def log_some_records(
 
     response = client.post(
         f"/api/datasets/{dataset}/TextClassification:bulk",
-        data=TextClassificationBulkData(
+        data=TextClassificationBulkRequest(
             records=[
                 TextClassificationRecord(**record),
             ],
@@ -96,6 +109,7 @@ def test_dataset_update_rule(mocked_client):
     "rule",
     [
         CreateLabelingRule(query="a query", description="Description", label="LALA"),
+        CreateLabelingRule(query="/a qu?ry/", description="Description", label="LALA"),
         CreateLabelingRule(
             query="another query", description="Description", labels=["A", "B", "C"]
         ),
@@ -131,6 +145,9 @@ def test_dataset_with_rules(mocked_client, rule):
     [
         CreateLabelingRule(query="a query", description="Description", label="LALA"),
         CreateLabelingRule(
+            query="/a qu(e|E)ry/", description="Description", label="LALA"
+        ),
+        CreateLabelingRule(
             query="another query", description="Description", labels=["A", "B", "C"]
         ),
     ],
@@ -163,13 +180,13 @@ def test_delete_dataset_rules(mocked_client):
     response = mocked_client.post(
         f"/api/datasets/TextClassification/{dataset}/labeling/rules",
         json=CreateLabelingRule(
-            query="a query", label="TEST", description="Description"
+            query="/a query/", label="TEST", description="Description"
         ).dict(),
     )
     assert response.status_code == 200
 
     response = mocked_client.delete(
-        f"/api/datasets/TextClassification/{dataset}/labeling/rules/{'a query'}"
+        f"/api/datasets/TextClassification/{dataset}/labeling/rules//a query/"
     )
     assert response.status_code == 200
 
@@ -199,7 +216,7 @@ def test_duplicated_dataset_rules(mocked_client):
     assert response.json() == {
         "detail": {
             "code": "rubrix.api.errors::EntityAlreadyExistsError",
-            "params": {"name": "a query", "type": "LabelingRule"},
+            "params": {"name": "a query", "type": "ServiceLabelingRule"},
         }
     }
 
@@ -314,6 +331,18 @@ def test_rule_metrics_with_missing_label(mocked_client):
                 "total_records": 1,
             },
         ),
+        (
+            CreateLabelingRule(query="/eje.*o/", labels=["A", "o.k."]),
+            {
+                "annotated_records": 1,
+                "correct": 1.0,
+                "coverage": 1.0,
+                "coverage_annotated": 1.0,
+                "incorrect": 1.0,
+                "precision": 0.5,
+                "total_records": 1,
+            },
+        ),
     ],
 )
 def test_rule_metrics_with_missing_label_for_stored_rule(
@@ -376,7 +405,7 @@ def test_create_rules_and_then_log(mocked_client):
         ),
         (
             [
-                CreateLabelingRule(query="ejemplo", label="TEST"),
+                CreateLabelingRule(query="/eje.?plo/", label="TEST"),
                 CreateLabelingRule(query="bad request", label="TEST"),
                 CreateLabelingRule(query="other", labels=["A", "B"]),
             ],

@@ -44,9 +44,9 @@
         <svgicon
           v-if="record.predicted && !labellingRulesView"
           :class="['icon__predicted', record.predicted]"
-          width="20"
-          height="20"
-          :name="record.predicted === 'ko' ? 'predicted-ko' : 'predicted-ok'"
+          width="40"
+          height="40"
+          :name="record.predicted === 'ko' ? 'no-matching' : 'matching'"
         ></svgicon>
         <re-tag
           v-for="label in record.annotation.labels"
@@ -59,8 +59,8 @@
 </template>
 
 <script>
-import "assets/icons/predicted-ok";
-import "assets/icons/predicted-ko";
+import "assets/icons/matching";
+import "assets/icons/no-matching";
 import { mapActions } from "vuex";
 import {
   TextClassificationRecord,
@@ -86,11 +86,8 @@ export default {
       return this.dataset.viewSettings.viewMode === "labelling-rules";
     },
     allowValidate() {
-      const isBinary =
-        this.dataset.labels.length === 2 && !this.dataset.isMultiLabel;
       return (
         this.record.status !== "Validated" &&
-        !isBinary &&
         (this.record.annotation ||
           this.record.prediction ||
           this.dataset.isMultiLabel)
@@ -169,22 +166,20 @@ export default {
     overflow: auto;
     text-align: right;
     padding: 4em 1.4em 1em 1em;
+    @extend %hide-scrollbar;
   }
 }
 
 .icon {
   &__predicted {
-    display: block;
-    text-align: right;
-    margin-right: 0;
-    margin-left: auto;
-    margin-bottom: 1em;
+    position: absolute;
+    right: 3em;
+    top: 1em;
     &.ko {
-      transform: scaleX(-1);
-      fill: $error;
+      color: $error;
     }
     &.ok {
-      fill: $success;
+      color: $success;
     }
   }
 }

@@ -45,18 +45,7 @@ export default {
   padding-top: 0;
   padding-bottom: 0;
   padding-left: 4em;
-  padding-right: calc(4em + 45px);
-  .--metrics & {
-    @include media(">desktop") {
-      padding-right: calc(294px + 100px);
-      transition: padding 0.1s ease-in-out;
-    }
-  }
-  @include media(">desktop") {
-    transition: padding 0.1s ease-in-out;
-    width: 100%;
-    padding-right: 100px;
-  }
+  @extend %collapsable-if-metrics !optional;
 }
 .global-actions {
   display: flex;
@@ -65,10 +54,10 @@ export default {
   text-align: left;
   padding: 1em 1.4em;
   background: $lighter-color;
-  border-radius: 3px 3px 1px 1px;
-  border: 1px solid palette(grey, smooth);
+  border-radius: $border-radius-m;
   position: relative;
-  margin-bottom: -1px;
+  box-shadow: 0 1px 2px 0 rgba(185, 185, 185, 0.5);
+  margin-bottom: 16px;
   &--exploration {
     position: relative;
   }

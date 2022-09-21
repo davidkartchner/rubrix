@@ -17,40 +17,44 @@
 
 <template>
   <div class="container">
-    <div
-      v-if="visibleEntities.length"
-      :class="[
-        'entities__container',
-        activeEntity ? 'entities__container--multiple' : '',
-      ]"
-    >
-      <span
-        v-for="(entity, index) in visibleEntities"
-        :key="index"
-        class="entity"
+    <div class="entities__wrapper">
+      <div
+        v-if="visibleEntities.length"
         :class="[
-          `color_${entity.colorId}`,
-          activeEntity === entity.text ? 'active' : '',
-          annotationEnabled
-            ? 'non-selectable--show-sort-code'
-            : 'non-selectable',
+          'entities__container',
+          activeEntity ? 'entities__container--multiple' : '',
         ]"
-        @click="onActiveEntity(entity)"
       >
-        {{ entity.text }}
-        <span v-if="entity.shortcut" class="shortcut"
-          >[{{ entity.shortcut }}]</span
+        <span
+          v-for="(entity, index) in visibleEntities"
+          :key="index"
+          class="entity"
+          :class="[
+            `color_${entity.colorId % $entitiesMaxColors}`,
+            activeEntity === entity.text ? 'active' : '',
+            annotationEnabled
+              ? 'non-selectable--show-sort-code'
+              : 'non-selectable',
+          ]"
+          @click="onActiveEntity(entity)"
         >
-      </span>
+          {{ entity.text }}
+          <span v-if="entity.shortcut" class="shortcut"
+            >[{{ entity.shortcut }}]</span
+          >
+        </span>
+        <ReButton
+          v-if="!showEntitySelector && dataset.entities.length > entitiesNumber"
+          class="entities__container__button"
+          @click="toggleEntitiesNumber"
+          >{{ `+ ${dataset.entities.length - entitiesNumber}` }}</ReButton
+        >
+      </div>
       <ReButton
-        v-if="dataset.entities.length > entitiesNumber"
-        class="entities__container__button"
+        v-if="showEntitySelector && dataset.entities.length > entitiesNumber"
+        class="entities__container__button fixed"
         @click="toggleEntitiesNumber"
-        >{{
-          showEntitySelector
-            ? "Show less"
-            : `+ ${dataset.entities.length - entitiesNumber}`
-        }}</ReButton
+        >{{ "Show less" }}</ReButton
       >
     </div>
   </div>
@@ -58,7 +62,7 @@
 
 <script>
 import "assets/icons/check";
-import "assets/icons/cross";
+import "assets/icons/close";
 const MAX_ENTITIES_SHOWN = 10;
 
 export default {
@@ -112,30 +116,43 @@ export default {
 .container {
   @extend %container;
   padding-top: 0;
-  padding-bottom: 0.7em;
+  padding-bottom: 0;
   margin-left: 0;
-  padding-right: calc(4em + 45px);
+  @extend %collapsable-if-metrics !optional;
 }
 .entities {
+  &__wrapper {
+    position: relative;
+  }
   &__container {
-    padding: 0.2em 0.5em;
+    padding: 0.4em 0.5em;
+    margin-bottom: 16px;
     background: palette(white);
-    border-radius: $border-radius;
+    border-radius: $border-radius-m;
     box-shadow: 0 1px 2px 0 rgba(185, 185, 185, 0.5);
     min-height: 48px;
+    max-height: 189px;
+    overflow: auto;
+    @extend %hide-scrollbar;
     &__button {
       margin-top: 0.3em;
       margin-left: 0.3em;
       padding: 0.5em;
-      color: $secondary-color !important;
       transition: background 0.2s ease-in-out;
       padding: 5px;
       border-radius: $border-radius;
       border: 0;
       background: none;
+      cursor: pointer;
       &:hover {
         background: $bg !important;
         transition: background 0.2s ease-in-out;
+      }
+      &.fixed {
+        position: absolute;
+        right: 8px;
+        bottom: 8px;
+        background: rgba(255, 255, 255, 80%);
       }
     }
     &--multiple {
@@ -147,7 +164,7 @@ export default {
 }
 .entity {
   padding: 0.3em;
-  margin: 0.5em;
+  margin: 4px;
   position: relative;
   display: inline-flex;
   align-items: center;

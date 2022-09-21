@@ -35,14 +35,14 @@
       v-if="annotationEnabled && span.origin === 'annotation'"
       width="11"
       height="11"
-      name="cross"
+      name="close"
     ></svgicon>
     <lazy-text-span-tooltip v-if="showTooltip" :span="span" />
   </span>
 </template>
 
 <script>
-import "assets/icons/cross";
+import "assets/icons/close";
 
 export default {
   props: {
@@ -75,7 +75,7 @@ export default {
       return this.dataset.viewSettings.viewMode === "annotate";
     },
     charsBetweenTokens() {
-      return this.span.tokens.at(-1).charsBetweenTokens;
+      return this.span.tokens[this.span.tokens.length - 1].charsBetweenTokens;
     },
   },
   methods: {

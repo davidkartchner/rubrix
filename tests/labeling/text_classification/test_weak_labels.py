@@ -12,11 +12,13 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import sys
 from typing import Callable, List, Optional, Union
 
 import numpy as np
 import pandas as pd
 import pytest
+from pandas.testing import assert_frame_equal
 
 from rubrix import TextClassificationRecord
 from rubrix.client.sdk.text_classification.models import (
@@ -193,12 +195,12 @@ class TestWeakLabelsBase:
             WeakLabels(rules=[lambda x: None], dataset="mock", query="mock")
         with pytest.raises(
             NoRecordsFoundError,
-            match="No records found in dataset 'mock' with ids \[-1\].",
+            match=r"No records found in dataset 'mock' with ids \[-1\].",
         ):
             WeakLabels(rules=[lambda x: None], dataset="mock", ids=[-1])
         with pytest.raises(
             NoRecordsFoundError,
-            match="No records found in dataset 'mock' with query 'mock' and with ids \[-1\].",
+            match=r"No records found in dataset 'mock' with query 'mock' and with ids \[-1\].",
         ):
             WeakLabels(rules=[lambda x: None], dataset="mock", query="mock", ids=[-1])
 
@@ -250,6 +252,20 @@ class TestWeakLabelsBase:
             _ = weak_labels.labels
         with pytest.raises(NotImplementedError):
             _ = weak_labels.cardinality
+        with pytest.raises(NotImplementedError):
+            weak_labels.extend_matrix([0.1])
+
+    def test_faiss_not_installed(self, monkeypatch):
+        def mock_load(*args, **kwargs):
+            return ["mock"]
+
+        monkeypatch.setattr(
+            "rubrix.labeling.text_classification.weak_labels.load", mock_load
+        )
+        monkeypatch.setitem(sys.modules, "faiss", None)
+        with pytest.raises(ModuleNotFoundError, match="pip install faiss-cpu"):
+            weak_labels = WeakLabelsBase(rules=[lambda x: "mock"] * 2, dataset="mock")
+            weak_labels._find_dists_and_nearest(None, None, None, None)
 
 
 class TestWeakLabels:
@@ -368,7 +384,7 @@ class TestWeakLabels:
 
     def test_summary(self, monkeypatch, rules):
         def mock_load(*args, **kwargs):
-            return [TextClassificationRecord(inputs="test")] * 4
+            return [TextClassificationRecord(text="test")] * 4
 
         monkeypatch.setattr(
             "rubrix.labeling.text_classification.weak_labels.load", mock_load
@@ -404,7 +420,7 @@ class TestWeakLabels:
             },
             index=["first_rule", "rule_1", "rubrix_rule", "total"],
         )
-        pd.testing.assert_frame_equal(summary, expected)
+        assert_frame_equal(summary, expected)
 
         summary = weak_labels.summary(normalize_by_coverage=True)
         expected = pd.DataFrame(
@@ -421,7 +437,7 @@ class TestWeakLabels:
             },
             index=["first_rule", "rule_1", "rubrix_rule", "total"],
         )
-        pd.testing.assert_frame_equal(summary, expected)
+        assert_frame_equal(summary, expected)
 
         summary = weak_labels.summary(annotation=np.array([1, -1, 0, 1]))
         expected = pd.DataFrame(
@@ -442,11 +458,13 @@ class TestWeakLabels:
             },
             index=["first_rule", "rule_1", "rubrix_rule", "total"],
         )
-        pd.testing.assert_frame_equal(summary, expected)
+        # The "correct" and "incorrect" columns from `expected_summary` may infer a different
+        # dtype than `weak_multi_labels.summary()` returns.
+        assert_frame_equal(summary, expected, check_dtype=False)
 
     def test_show_records(self, monkeypatch, rules):
         def mock_load(*args, **kwargs):
-            return [TextClassificationRecord(inputs="test", id=i) for i in range(5)]
+            return [TextClassificationRecord(text="test", id=i) for i in range(5)]
 
         monkeypatch.setattr(
             "rubrix.labeling.text_classification.weak_labels.load", mock_load
@@ -484,7 +502,7 @@ class TestWeakLabels:
 
     def test_change_mapping(self, monkeypatch, rules):
         def mock_load(*args, **kwargs):
-            return [TextClassificationRecord(inputs="test", id=i) for i in range(5)]
+            return [TextClassificationRecord(text="test", id=i) for i in range(5)]
 
         monkeypatch.setattr(
             "rubrix.labeling.text_classification.weak_labels.load", mock_load
@@ -537,6 +555,49 @@ class TestWeakLabels:
 
         assert (weak_labels.matrix() == old_wlm).all()
 
+    @pytest.fixture
+    def weak_labels(self, monkeypatch, rules):
+        def mock_load(*args, **kwargs):
+            return [TextClassificationRecord(text="test", id=i) for i in range(3)]
+
+        monkeypatch.setattr(
+            "rubrix.labeling.text_classification.weak_labels.load", mock_load
+        )
+
+        def mock_apply(self, *args, **kwargs):
+            weak_label_matrix = np.array(
+                [[0, -1, -1], [-1, 1, -1], [-1, -1, -1]],
+                dtype=np.short,
+            )
+            annotation_array = np.array([0, 1, -1], dtype=np.short)
+            label2int = {None: -1, "negative": 0, "positive": 1}
+            return weak_label_matrix, annotation_array, label2int
+
+        monkeypatch.setattr(WeakLabels, "_apply_rules", mock_apply)
+
+        return WeakLabels(rules=rules, dataset="mock")
+
+    def test_extend_matrix(self, weak_labels):
+        with pytest.raises(
+            ValueError,
+            match="Embeddings are not optional the first time a matrix is extended.",
+        ):
+            weak_labels.extend_matrix([1.0, 0.5, 0.5])
+
+        weak_labels.extend_matrix(
+            [1.0, 0.5, 0.5], np.array([[0.1, 0.1], [0.1, 0.11], [0.11, 0.1]])
+        )
+
+        np.testing.assert_equal(
+            weak_labels.matrix(), np.array([[0, -1, -1], [-1, 1, -1], [-1, 1, -1]])
+        )
+
+        weak_labels.extend_matrix([1.0, 1.0, 1.0])
+
+        np.testing.assert_equal(
+            weak_labels.matrix(), np.array([[0, -1, -1], [-1, 1, -1], [-1, -1, -1]])
+        )
+
 
 class TestWeakMultiLabels:
     def test_apply(
@@ -572,9 +633,9 @@ class TestWeakMultiLabels:
 
     def test_matrix_annotation(self, monkeypatch):
         expected_records = [
-            TextClassificationRecord(inputs="test without annot", multi_label=True),
+            TextClassificationRecord(text="test without annot", multi_label=True),
             TextClassificationRecord(
-                inputs="test with annot", annotation="positive", multi_label=True
+                text="test with annot", annotation="positive", multi_label=True
             ),
         ]
 
@@ -613,7 +674,7 @@ class TestWeakMultiLabels:
 
     def test_summary(self, monkeypatch, multilabel_rules):
         def mock_load(*args, **kwargs):
-            return [TextClassificationRecord(inputs="test", multi_label=True)] * 4
+            return [TextClassificationRecord(text="test", multi_label=True)] * 4
 
         monkeypatch.setattr(
             "rubrix.labeling.text_classification.weak_labels.load", mock_load
@@ -656,7 +717,7 @@ class TestWeakMultiLabels:
             },
             index=["first_rule", "rule_1", "rubrix_rule", "total"],
         )
-        pd.testing.assert_frame_equal(summary, expected)
+        assert_frame_equal(summary, expected)
 
         summary = weak_labels.summary(normalize_by_coverage=True)
         expected = pd.DataFrame(
@@ -672,7 +733,7 @@ class TestWeakMultiLabels:
             },
             index=["first_rule", "rule_1", "rubrix_rule", "total"],
         )
-        pd.testing.assert_frame_equal(summary, expected)
+        assert_frame_equal(summary, expected)
 
         summary = weak_labels.summary(
             annotation=np.array([[0, 1], [-1, -1], [0, 1], [1, 1]])
@@ -694,11 +755,13 @@ class TestWeakMultiLabels:
             },
             index=["first_rule", "rule_1", "rubrix_rule", "total"],
         )
-        pd.testing.assert_frame_equal(summary, expected)
+        # The "correct" and "incorrect" columns from `expected_summary` may infer a different
+        # dtype than `weak_multi_labels.summary()` returns.
+        assert_frame_equal(summary, expected, check_dtype=False)
 
     def test_compute_correct_incorrect(self, monkeypatch):
         def mock_load(*args, **kwargs):
-            return [TextClassificationRecord(inputs="mock")]
+            return [TextClassificationRecord(text="mock")]
 
         monkeypatch.setattr(
             "rubrix.labeling.text_classification.weak_labels.load", mock_load
@@ -721,7 +784,7 @@ class TestWeakMultiLabels:
     def test_show_records(self, monkeypatch, multilabel_rules):
         def mock_load(*args, **kwargs):
             return [
-                TextClassificationRecord(inputs="test", id=i, multi_label=True)
+                TextClassificationRecord(text="test", id=i, multi_label=True)
                 for i in range(5)
             ]
 
@@ -764,3 +827,91 @@ class TestWeakMultiLabels:
         assert weak_labels.show_records(
             labels=["positive"], rules=["rubrix_rule"]
         ).empty
+
+    @pytest.fixture
+    def weak_multi_labels(self, monkeypatch, rules):
+        def mock_load(*args, **kwargs):
+            return [
+                TextClassificationRecord(text="test", id=i, multi_label=True)
+                for i in range(3)
+            ]
+
+        monkeypatch.setattr(
+            "rubrix.labeling.text_classification.weak_labels.load", mock_load
+        )
+
+        def mock_apply(self, *args, **kwargs):
+            weak_label_matrix = np.array(
+                [
+                    [[0, 1], [-1, -1], [-1, -1]],
+                    [[-1, -1], [1, 1], [-1, -1]],
+                    [[-1, -1], [-1, -1], [-1, -1]],
+                ],
+                dtype=np.short,
+            )
+            annotation_array = np.array([[0, 0], [1, 1], [-1, -1]], dtype=np.short)
+            return weak_label_matrix, annotation_array, ["mock1", "mock2"]
+
+        monkeypatch.setattr(WeakMultiLabels, "_apply_rules", mock_apply)
+
+        return WeakMultiLabels(rules=rules, dataset="mock")
+
+    def test_extend_matrix(self, weak_multi_labels):
+        with pytest.raises(
+            ValueError,
+            match="Embeddings are not optional the first time a matrix is extended.",
+        ):
+            weak_multi_labels.extend_matrix([1.0, 0.5, 0.5])
+
+        weak_multi_labels.extend_matrix(
+            [1.0, 0.5, 0.5], np.array([[0.1, 0.1], [0.1, 0.11], [0.11, 0.1]])
+        )
+
+        np.testing.assert_equal(
+            weak_multi_labels.matrix(),
+            np.array(
+                [
+                    [[0, 1], [1, 1], [-1, -1]],
+                    [[-1, -1], [1, 1], [-1, -1]],
+                    [[-1, -1], [1, 1], [-1, -1]],
+                ]
+            ),
+        )
+
+        expected_summary = pd.DataFrame(
+            {
+                "label": [{"mock2"}, {"mock2", "mock1"}, set(), {"mock2", "mock1"}],
+                "coverage": [1 / 3.0, 1.0, 0.0, 1.0],
+                "annotated_coverage": [0.5, 1.0, 0.0, 1.0],
+                "overlaps": [1 / 3.0, 1 / 3.0, 0.0, 1 / 3.0],
+                "correct": [0, 2, 0, 2],
+                "incorrect": [1, 2, 0, 3],
+                "precision": [0, 0.5, np.nan, 2 / 5.0],
+            },
+            index=list(weak_multi_labels._rules_name2index.keys()) + ["total"],
+        )
+        # The "correct" and "incorrect" columns from `expected_summary` may infer a different
+        # dtype than `weak_multi_labels.summary()` returns.
+        assert_frame_equal(
+            weak_multi_labels.summary(), expected_summary, check_dtype=False
+        )
+
+        expected_show_records = pd.DataFrame(
+            map(lambda x: x.dict(), weak_multi_labels.records())
+        )
+        assert_frame_equal(
+            weak_multi_labels.show_records(rules=["rule_1"]), expected_show_records
+        )
+
+        weak_multi_labels.extend_matrix([1.0, 1.0, 1.0])
+
+        np.testing.assert_equal(
+            weak_multi_labels.matrix(),
+            np.array(
+                [
+                    [[0, 1], [-1, -1], [-1, -1]],
+                    [[-1, -1], [1, 1], [-1, -1]],
+                    [[-1, -1], [-1, -1], [-1, -1]],
+                ]
+            ),
+        )

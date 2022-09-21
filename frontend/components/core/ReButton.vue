@@ -201,11 +201,17 @@ export default {
     border: 1px solid $primary-color;
     color: $primary-color;
     text-transform: none;
+    .svg-icon {
+      fill: $primary-color;
+    }
     &:hover,
     &:focus {
       background: transparent;
       border-color: darken($primary-color, 10%);
       color: darken($primary-color, 10%);
+      .svg-icon {
+        fill: darken($primary-color, 10%);
+      }
     }
     &[disabled] {
       background-color: transparent;
@@ -273,10 +279,14 @@ export default {
 .button-clear {
   @extend %button;
   @extend %clear;
-  &:hover,
-  &:focus {
-    text-decoration: none;
-    color: $font-dark-color;
+  border-radius: $border-radius;
+  padding: 0.5em;
+  transition: all 0.2s ease;
+  @include font-size(14px);
+  background: none;
+  &:hover {
+    transition: all 0.2s ease;
+    background: palette(grey, bg);
   }
   &--small {
     @extend %button;
